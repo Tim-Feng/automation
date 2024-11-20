@@ -1,13 +1,15 @@
 on run {input, parameters}
 -- 獲取機密資訊從環境變數
-  set refreshToken to do shell script "grep '^REFRESH_TOKEN=' .env | cut -d '=' -f 2"
-  set clientId to do shell script "grep '^CLIENT_ID=' .env | cut -d '=' -f 2"
-  set clientSecret to do shell script "grep '^CLIENT_SECRET=' .env | cut -d '=' -f 2"
-  set parentID to do shell script "grep '^GOOGLE_DRIVE_PARENT_ID=' .env | cut -d '=' -f 2"
-  set trelloAPIKey to do shell script "grep '^TRELLO_API_KEY=' .env | cut -d '=' -f 2"
-  set trelloToken to do shell script "grep '^TRELLO_TOKEN=' .env | cut -d '=' -f 2"
-  set trelloListID to do shell script "grep '^TRELLO_LIST_ID=' .env | cut -d '=' -f 2"
-  set templateCardID to do shell script "grep '^TEMPLATE_CARD_ID=' .env | cut -d '=' -f 2"
+  set envPath to "/Users/Mac/Library/Mobile Documents/com~apple~Automator/Documents/.env"
+
+  set refreshToken to do shell script "grep '^REFRESH_TOKEN=' " & quoted form of envPath & " | cut -d '=' -f 2 | tr -d '\"' | tr -d '\\n' | tr -d '\\r'"
+  set clientId to do shell script "grep '^CLIENT_ID=' " & quoted form of envPath & " | cut -d '=' -f 2 | tr -d '\"' | tr -d '\\n' | tr -d '\\r'"
+  set clientSecret to do shell script "grep '^CLIENT_SECRET=' " & quoted form of envPath & " | cut -d '=' -f 2 | tr -d '\"' | tr -d '\\n' | tr -d '\\r'"
+  set parentID to do shell script "grep '^GOOGLE_DRIVE_PARENT_ID=' " & quoted form of envPath & " | cut -d '=' -f 2 | tr -d '\"' | tr -d '\\n' | tr -d '\\r'"
+  set trelloAPIKey to do shell script "grep '^TRELLO_API_KEY=' " & quoted form of envPath & " | cut -d '=' -f 2 | tr -d '\"' | tr -d '\\n' | tr -d '\\r'"
+  set trelloToken to do shell script "grep '^TRELLO_TOKEN=' " & quoted form of envPath & " | cut -d '=' -f 2 | tr -d '\"' | tr -d '\\n' | tr -d '\\r'"
+  set trelloListID to do shell script "grep '^TRELLO_LIST_ID=' " & quoted form of envPath & " | cut -d '=' -f 2 | tr -d '\"' | tr -d '\\n' | tr -d '\\r'"
+  set templateCardID to do shell script "grep '^TEMPLATE_CARD_ID=' " & quoted form of envPath & " | cut -d '=' -f 2 | tr -d '\"' | tr -d '\\n' | tr -d '\\r'"
 
   -- 循環處理每個影片
   repeat with movieFile in input
