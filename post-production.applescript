@@ -163,15 +163,15 @@ on run {input, parameters}
 
                 -- 第一次按下回車鍵來確認影片路徑
                 keystroke return
-                delay 1 -- 等待路徑跳轉
+                delay 2 -- 等待路徑跳轉
 
                 -- 第二次按下回車鍵來打開影片檔案
                 keystroke return
-                delay 6 -- 增加延遲，等待影片加入完成
+                delay 5 -- 增加延遲，等待影片加入完成
 
                 -- 點擊 "Done" 按鈕
                 click button "Done" of sheet 1 of window 1
-                delay 
+                delay 2
 
                 -- 設定 Load Subtitle 下拉選單的操作
                 -- 獲取窗口的大小和位置
