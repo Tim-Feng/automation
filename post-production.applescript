@@ -169,9 +169,18 @@ on run {input, parameters}
                 keystroke return
                 delay 5 -- 增加延遲，等待影片加入完成
 
-                -- 點擊 "Done" 按鈕
-                click button "Done" of sheet 1 of window 1
-                delay 2
+                set frontmost to true
+                repeat
+                    -- 檢查是否存在名為 "Done" 的按鈕
+                    if (exists button "Done" of sheet 1 of window 1) then
+                        -- 一旦按鈕出現，就按下它
+                        click button "Done" of sheet 1 of window 1
+                        exit repeat
+                    else
+                        -- 若按鈕尚未出現，每5秒檢查一次
+                        delay 5
+                    end if
+                end repeat
 
                 -- 設定 Load Subtitle 下拉選單的操作
                 -- 獲取窗口的大小和位置
@@ -184,16 +193,16 @@ on run {input, parameters}
                 
                 -- 使用 cliclick 來移動滑鼠到 Load Subtitle 下拉選單的位置
                 do shell script "/usr/local/bin/cliclick m:" & targetX & "," & targetY
-                delay 1 -- 增加延遲以模擬滑鼠停留的效果
+                delay 2 -- 增加延遲以模擬滑鼠停留的效果
                 
                 -- 點擊 Load Subtitle 下拉選單
                 do shell script "/usr/local/bin/cliclick c:" & targetX & "," & targetY
-                delay 1 -- 等待選單展開
+                delay 2 -- 等待選單展開
                 
                 -- 移動滑鼠到 Load Subtitle 的選項（向下移動一些）
                 set targetY to targetY + 30 -- 向下移動 30 點（可以根據需要調整）
                 do shell script "/usr/local/bin/cliclick m:" & targetX & "," & targetY
-                delay 1 -- 增加延遲以模擬滑鼠停留的效果
+                delay 2 -- 增加延遲以模擬滑鼠停留的效果
                 
                 -- 點擊 Load Subtitle 選項
                 do shell script "/usr/local/bin/cliclick c:" & targetX & "," & targetY
