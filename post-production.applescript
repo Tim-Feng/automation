@@ -4,7 +4,9 @@ on run {input, parameters}
     repeat with currentSubtitlePath in input
         set subtitlePath to POSIX path of currentSubtitlePath
         set subtitleDirectory to do shell script "dirname " & quoted form of subtitlePath
-        set trimmedName to do shell script "basename " & quoted form of subtitlePath & " | sed 's/-zh\\.[^.]*$//'"
+        -- 使用單步處理，直接去掉結尾的 -zh.srt
+        set trimmedName to do shell script "basename " & quoted form of subtitlePath & " | sed 's/-zh\\.srt$//'"
+
 
         -- 動態獲取影片副檔名
         set videoExtension to do shell script "ls " & quoted form of subtitleDirectory & "/" & trimmedName & "-1920*1340.* | head -n 1 | awk -F'.' '{print $NF}'"
