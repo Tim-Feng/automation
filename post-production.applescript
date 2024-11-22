@@ -47,11 +47,11 @@ on run {input, parameters}
 
                     -- 第二次按下回車鍵來打開字幕檔案
                     keystroke return
-                    delay 3 -- 等待字幕檔案加載完成
+                    delay 5 -- 等待字幕檔案加載完成
 
                     -- 全選字幕
                     click menu item "Select All" of menu "Edit" of menu bar 1
-                    delay 1 -- 給它一些時間來完成全選操作
+                    delay 3 -- 給它一些時間來完成全選操作
 
                     -- 使用鼠標點擊特定的 XY 座標來展開下拉選單
                     set mouseX to 387
@@ -61,7 +61,7 @@ on run {input, parameters}
 
                     -- 使用鍵盤箭頭向下鍵選擇 "蘋方 1340"
                     key code 125 -- 按下向下箭頭
-                    delay 0.5 -- 等待選擇完成
+                    delay 1 -- 等待選擇完成
                     key code 36 -- 按下 Enter 鍵選擇模板
                     delay 2 -- 等待模板套用完成
 
@@ -71,7 +71,7 @@ on run {input, parameters}
 
                     -- 刪除預設檔名
                     key code 51 -- 按下 delete 鍵清除整個欄位（假設全選狀態）
-                    delay 0.5 -- 增加延遲以確保欄位被完全清空
+                    delay 1 -- 增加延遲以確保欄位被完全清空
 
                     -- 獲取新檔名並加上後置
                     set newSubtitleName to trimmedName & "-1920*1340-zh"
@@ -107,7 +107,7 @@ on run {input, parameters}
 
                     -- 第二次按下回車鍵來打開影片檔案
                     keystroke return
-                    delay 3 -- 等待影片加載完成
+                    delay 10 -- 等待影片加載完成
 
                     -- 再次儲存檔案
                     keystroke "s" using {command down} -- 模擬 Command+S 來保存影片與字幕的關聯
@@ -167,7 +167,7 @@ on run {input, parameters}
 
                 -- 第二次按下回車鍵來打開影片檔案
                 keystroke return
-                delay 5 -- 增加延遲，等待影片加入完成
+                delay 10 -- 增加延遲，等待影片加入完成
 
                 set frontmost to true
                 repeat
@@ -202,7 +202,7 @@ on run {input, parameters}
                 -- 移動滑鼠到 Load Subtitle 的選項（向下移動一些）
                 set targetY to targetY + 30 -- 向下移動 30 點（可以根據需要調整）
                 do shell script "/usr/local/bin/cliclick m:" & targetX & "," & targetY
-                delay 2 -- 增加延遲以模擬滑鼠停留的效果
+                delay 3 -- 增加延遲以模擬滑鼠停留的效果
                 
                 -- 點擊 Load Subtitle 選項
                 do shell script "/usr/local/bin/cliclick c:" & targetX & "," & targetY
