@@ -16,43 +16,71 @@ on run {input, parameters}
 
         -- 使用 refresh token 來獲取新的 access token
         set refreshURL to "https://oauth2.googleapis.com/token"
-        set refreshCommand to "curl -X POST " & quoted form of refreshURL & " -d client_id=" & clientId & " -d client_secret=" & clientSecret & " -d refresh_token=" & refreshToken & " -d grant_type=refresh_token"
-        set refreshResponse to do shell script refreshCommand
+        set refreshCommand to "curl -s -X POST " & quoted form of refreshURL & " -d client_id=" & clientId & " -d client_secret=" & clientSecret & " -d refresh_token=" & refreshToken & " -d grant_type=refresh_token"
+        
+        -- 檢查 Refresh Token 是否成功
+        try
+            set refreshResponse to do shell script refreshCommand
+            set accessToken to do shell script "echo " & quoted form of refreshResponse & " | python3 -c \"import sys, json; print(json.load(sys.stdin)['access_token'])\""
+        on error
+            return input
+        end try
 
-        -- 使用 shell script 解析 JSON 中的 access_token
-        set accessToken to do shell script "echo " & quoted form of refreshResponse & " | python3 -c \"import sys, json; print(json.load(sys.stdin)['access_token'])\""
+        -- 搜尋共用雲端硬碟中的資料夾
+        set searchFolderQuery to "mimeType='application/vnd.google-apps.folder' and name='" & movieID & "' and trashed = false"
+        set encodedQuery to do shell script "echo " & quoted form of searchFolderQuery & " | python3 -c \"import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip()))\""
+        set searchFolderCommand to "curl -s -X GET 'https://www.googleapis.com/drive/v3/files?q=" & encodedQuery & "&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives' -H 'Authorization: Bearer " & accessToken & "'"
 
-        -- 使用 access token 來從 Google Sheets 獲取數據
-        set sheetID to "1EE5tphRzOLvCclDMPpg0SxY8Zfq1zWBu4010yBKw9xc"
-        set sheetRange to "Sheet1!A:D"
-        set sheetURL to "https://sheets.googleapis.com/v4/spreadsheets/" & sheetID & "/values/" & sheetRange
-        set sheetCommand to "curl -X GET " & quoted form of sheetURL & " -H \"Authorization: Bearer " & accessToken & "\""
-        set sheetValues to do shell script sheetCommand
+        try
+            set folderResponse to do shell script searchFolderCommand
+            set folderId to do shell script "echo " & quoted form of folderResponse & " | python3 -c \"import sys, json; files = json.load(sys.stdin).get('files', []); print(files[0]['id'] if files else '')\""
+            
+            if folderId is equal to "" then
+                return input
+            end if
+        on error errMsg
+            return input
+        end try
 
-        -- 定義 Python 腳本來解析匹配行
-        set pythonScript to "import sys, json; data = json.loads(sys.stdin.read()); movie_id = '" & movieID & "'; result = [line for line in data['values'] if line[0] == movie_id]; print(result[0] if result else '[]')"
+        -- 在找到的資料夾中搜尋 Google Doc
+        set searchDocQuery to "mimeType='application/vnd.google-apps.document' and '" & folderId & "' in parents and trashed = false"
+        set encodedDocQuery to do shell script "echo " & quoted form of searchDocQuery & " | python3 -c \"import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip()))\""
+        set searchDocCommand to "curl -s -X GET 'https://www.googleapis.com/drive/v3/files?q=" & encodedDocQuery & "&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives' -H 'Authorization: Bearer " & accessToken & "'"
 
-        -- 使用 shell 執行該腳本
-        set pythonScriptCommand to "echo " & quoted form of sheetValues & " | python3 -c " & quoted form of pythonScript
-        set matchingRow to do shell script pythonScriptCommand
+        try
+            set docResponse to do shell script searchDocCommand
+            set fileID to do shell script "echo " & quoted form of docResponse & " | python3 -c \"import sys, json; files = json.load(sys.stdin).get('files', []); print(files[0]['id'] if files else '')\""
+            
+            if fileID is equal to "" then
+                return input
+            end if
+        on error errMsg
+            return input
+        end try
 
-        -- 檢查結果
-        if matchingRow is equal to "[]" then
+        -- 下載並解析文件內容
+        set curlCommand to "curl -s -X GET 'https://www.googleapis.com/drive/v3/files/" & fileID & "/export?mimeType=text/plain' -H 'Authorization: Bearer " & accessToken & "'"
+
+        try
+            set fileContent to do shell script curlCommand
+            if fileContent contains "error" then return input
+        on error errMsg
+            return input
+        end try
+
+        -- 解析文件內容
+        set allLines to paragraphs of fileContent
+
+        -- 提取內容
+        if (count of allLines) < 5 then
             return input
         end if
+        
+        set firstText to removeEmoji(item 1 of allLines)
+        set secondText to removeEmoji(item 2 of allLines)
+        set thirdText to item 5 of allLines
 
-        -- 使用 Python 解析 JSON 並獲取文本數據
-        set pythonExtractScript to "import sys, ast; data = ast.literal_eval(sys.stdin.read()); print(data[1], data[2], data[3], sep='|')"
-        set parsedTextCommand to "echo " & quoted form of matchingRow & " | python3 -c " & quoted form of pythonExtractScript
-        set parsedText to do shell script parsedTextCommand
-
-        -- 拆分獲取到的文本
-        set textItems to splitString(parsedText, "|")
-        set firstText to item 1 of textItems
-        set secondText to item 2 of textItems
-        set thirdText to item 3 of textItems
-
-         -- 打開 Keynote 並加載模板
+        -- 打開 Keynote 並加載模板
         set movieDirectory to do shell script "dirname " & quoted form of movieFilePath
         set templateFilePath to movieDirectory & "/影片模板 1920*3414.key"
 
@@ -447,11 +475,14 @@ on run {input, parameters}
     return input
 end run
 
--- Helper function to split a string by a delimiter
-on splitString(theString, theDelimiter)
-    set oldDelimiters to AppleScript's text item delimiters
-    set AppleScript's text item delimiters to theDelimiter
-    set theArray to every text item of theString
-    set AppleScript's text item delimiters to oldDelimiters
-    return theArray
-end splitString
+-- Helper function to remove emoji
+on removeEmoji(inputText)
+    if inputText contains " " then
+        set AppleScript's text item delimiters to " "
+        set textItems to text items of inputText
+        set AppleScript's text item delimiters to ""
+        return (items 2 thru -1 of textItems) as text
+    else
+        return (text 2 thru -1 of inputText)
+    end if
+end removeEmoji
