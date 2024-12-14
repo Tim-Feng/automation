@@ -71,19 +71,10 @@ on run {input, parameters}
         keystroke return
         delay 3
 
-        -- 更精確地查找 "Insert" 按鈕
-        try
-          tell window 1
-            tell sheet 1
-              click button "Insert"
-            end tell
-          end tell
-          delay 6
-        on error
-          -- 如果按鈕無法點擊，則顯示錯誤信息
-          display dialog "找不到插入按鈕，請手動嘗試。" buttons {"OK"} default button "OK"
-          return input
-        end try
+        -- 確認輸入影片
+        keystroke return
+        delay 3
+
       end tell
     end tell
 
