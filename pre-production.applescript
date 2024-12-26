@@ -75,6 +75,44 @@ on run {input, parameters}
         keystroke return
         delay 3
 
+        -- 等待插入過程完成
+        set maxWaitTime to 300 -- 最多等待 5 分鐘
+        set waitCount to 0
+        
+        repeat
+            delay 1
+            set waitCount to waitCount + 1
+            
+            -- 檢查是否存在 "Cancel" 按鈕
+            try
+                if exists sheet 1 then
+                    if exists button "Cancel" of sheet 1 then
+                        -- 還在插入中，繼續等待
+                        if waitCount > maxWaitTime then
+                            display dialog "影片插入時間過長，請檢查影片檔案。" buttons {"OK"} default button "OK"
+                            error "插入超時"
+                        end if
+                    else
+                        -- 沒有 Cancel 按鈕，可能已完成
+                        delay 3 -- 等待一下確保完全完成
+                        exit repeat
+                    end if
+                else
+                    -- 沒有 sheet，應該已完成
+                    delay 3 -- 等待一下確保完全完成
+                    exit repeat
+                end if
+            on error errMsg
+                if errMsg is not "插入超時" then
+                    -- 如果是其他錯誤，假設已完成
+                    delay 3
+                    exit repeat
+                else
+                    -- 如果是超時錯誤，向外拋出
+                    error errMsg
+                end if
+            end try
+        end repeat
       end tell
     end tell
 
