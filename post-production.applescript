@@ -53,17 +53,15 @@ on run {input, parameters}
                     click menu item "Select All" of menu "Edit" of menu bar 1
                     delay 3 -- 給它一些時間來完成全選操作
 
-                    -- 使用鼠標點擊特定的 XY 座標來展開下拉選單
-                    set mouseX to 387
-                    set mouseY to 98
-                    do shell script "/usr/bin/env osascript -e 'tell application \"System Events\" to click at {" & mouseX & ", " & mouseY & "}'"
+                    -- 找到並點擊 Style combo box
+                    set styleComboBox to combo box 1 of window 1
+                    click styleComboBox
                     delay 1 -- 等待選單展開
-
-                    -- 使用鍵盤箭頭向下鍵選擇 "蘋方 1340"
-                    key code 125 -- 按下向下箭頭
-                    delay 1 -- 等待選擇完成
-                    key code 36 -- 按下 Enter 鍵選擇模板
-                    delay 2 -- 等待模板套用完成
+                    
+                    -- 選擇 "蘋方 1340" 選項
+                    set styleValue to "蘋方 1340"
+                    set value of styleComboBox to styleValue
+                    delay 2 -- 等待樣式套用完成
 
                     -- 儲存檔案時修改檔名
                     keystroke "s" using {command down} -- 模擬 Command+S 來保存文件
