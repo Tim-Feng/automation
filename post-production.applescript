@@ -53,15 +53,17 @@ on run {input, parameters}
                     click menu item "Select All" of menu "Edit" of menu bar 1
                     delay 3 -- 給它一些時間來完成全選操作
 
-                    -- 找到並點擊 Style combo box
-                    set styleComboBox to combo box 1 of window 1
-                    click styleComboBox
+                    -- 使用鼠標點擊特定的 XY 座標來展開下拉選單
+                    set mouseX to 387
+                    set mouseY to 98
+                    do shell script "/usr/bin/env osascript -e 'tell application \"System Events\" to click at {" & mouseX & ", " & mouseY & "}'"
                     delay 1 -- 等待選單展開
-                    
-                    -- 選擇 "蘋方 1340" 選項
-                    set styleValue to "蘋方 1340"
-                    set value of styleComboBox to styleValue
-                    delay 2 -- 等待樣式套用完成
+
+                    -- 使用鍵盤箭頭向下鍵選擇 "蘋方 1340"
+                    key code 125 -- 按下向下箭頭
+                    delay 1 -- 等待選擇完成
+                    key code 36 -- 按下 Enter 鍵選擇模板
+                    delay 2 -- 等待模板套用完成
 
                     -- 儲存檔案時修改檔名
                     keystroke "s" using {command down} -- 模擬 Command+S 來保存文件
@@ -120,157 +122,18 @@ on run {input, parameters}
         end tell
         delay 5 -- 確保Aegisub完全關閉
 
-        -- 開啟 MacX Video Converter Pro 並載入影片
-        tell application "MacX Video Converter Pro"
-            activate
-            delay 5 -- 等待應用程式完全打開
-        end tell
+        -- 使用 ffmpeg 來處理影片和字幕
+        set videoPath to subtitleDirectory & "/" & trimmedName & "-1920*1340." & videoExtension
+        set subtitlePath to subtitleDirectory & "/" & newSubtitleName & ".ass"
+        set outputPath to subtitleDirectory & "/" & trimmedName & "-1920*1340-zh.mp4"
 
-        tell application "System Events"
-            tell process "MacX Video Converter Pro"
-                -- 清除工作區中的所有影片，確保工作區是空的
-                set mouseX to 616
-                set mouseY to 146
-                do shell script "/usr/local/bin/cliclick m:" & mouseX & "," & mouseY
-                delay 1 -- 增加延遲以模擬滑鼠停留的效果
+        -- 執行 ffmpeg 指令
+        set ffmpegCommand to "/usr/local/bin/ffmpeg -i " & quoted form of videoPath & " -vf \"ass=" & quoted form of subtitlePath & "\" -c:a copy " & quoted form of outputPath
 
-                -- 點擊垃圾桶符號來清除所有影片
-                do shell script "/usr/local/bin/cliclick c:" & mouseX & "," & mouseY
-                delay 2 -- 等待清除完成
-
-                -- 點擊 "Video" 按鈕來選擇影片
-                click button "Video" of group 1 of group 1 of window 1
-                delay 3 -- 等待新窗口或對話框打開
-
-                -- 按下 Command+Shift+G 來打開 "前往文件夾" 的輸入框
-                keystroke "g" using {command down, shift down}
-                delay 2 -- 等待 "前往文件夾" 的輸入框出現
-
-                -- 使用逐字鍵入影片路徑的方式來避免輸入錯誤
-                repeat with i from 1 to (count of characters of videoPath)
-                    if i ≤ 5 then
-                        -- 對於前五個字符增加延遲
-                        keystroke (character i of videoPath)
-                        delay 0.3 -- 增加延遲，確保系統接受開頭字符
-                    else
-                        -- 後續字符正常輸入
-                        keystroke (character i of videoPath)
-                    end if
-                end repeat
-                delay 2 -- 等待輸入完成
-
-                -- 第一次按下回車鍵來確認影片路徑
-                keystroke return
-                delay 2 -- 等待路徑跳轉
-
-                -- 第二次按下回車鍵來打開影片檔案
-                keystroke return
-                delay 10 -- 增加延遲，等待影片加入完成
-
-                set frontmost to true
-                repeat
-                    -- 檢查是否存在名為 "Done" 的按鈕
-                    if (exists button "Done" of sheet 1 of window 1) then
-                        -- 一旦按鈕出現，就按下它
-                        click button "Done" of sheet 1 of window 1
-                        exit repeat
-                    else
-                        -- 若按鈕尚未出現，每5秒檢查一次
-                        delay 5
-                    end if
-                end repeat
-
-                -- 設定 Load Subtitle 下拉選單的操作
-                -- 獲取窗口的大小和位置
-                set windowBounds to size of window 1
-                set windowPosition to position of window 1
-                
-                -- 計算 Load Subtitle 下拉選單的絕對位置
-                set targetX to (item 1 of windowPosition) + 164
-                set targetY to (item 2 of windowPosition) + 164
-                
-                -- 使用 cliclick 來移動滑鼠到 Load Subtitle 下拉選單的位置
-                do shell script "/usr/local/bin/cliclick m:" & targetX & "," & targetY
-                delay 2 -- 增加延遲以模擬滑鼠停留的效果
-                
-                -- 點擊 Load Subtitle 下拉選單
-                do shell script "/usr/local/bin/cliclick c:" & targetX & "," & targetY
-                delay 2 -- 等待選單展開
-                
-                -- 移動滑鼠到 Load Subtitle 的選項（向下移動一些）
-                set targetY to targetY + 30 -- 向下移動 30 點（可以根據需要調整）
-                do shell script "/usr/local/bin/cliclick m:" & targetX & "," & targetY
-                delay 3 -- 增加延遲以模擬滑鼠停留的效果
-                
-                -- 點擊 Load Subtitle 選項
-                do shell script "/usr/local/bin/cliclick c:" & targetX & "," & targetY
-                delay 2 -- 等待選項被選中
-                
-                -- 按下 Command+Shift+G 來打開 "前往文件夾" 的輸入框
-                keystroke "g" using {command down, shift down}
-                delay 2 -- 等待 "前往文件夾" 輸入框出現
-                
-                -- 定義字幕檔的完整路徑（這次是 `.ass` 檔案）
-                set fullSubtitlePath to subtitleDirectory & "/" & newSubtitleName & ".ass"
-                
-                -- 使用逐字鍵入字幕檔的路徑
-                repeat with i from 1 to (count of characters of fullSubtitlePath)
-                    if i ≤ 5 then
-                        -- 對於前五個字符增加延遲
-                        keystroke (character i of fullSubtitlePath)
-                        delay 0.3 -- 增加延遲，確保系統接受開頭字符
-                    else
-                        -- 後續字符正常輸入
-                        keystroke (character i of fullSubtitlePath)
-                    end if
-                end repeat
-                delay 2 -- 等待輸入完成
-                
-                -- 按下回車鍵來確認輸入的路徑
-                keystroke return
-                delay 3 -- 等待跳轉到指定目錄
-                
-                -- 按下回車鍵來選擇字幕檔並確認
-                keystroke return
-                delay 3 -- 等待字幕檔加入完成
-
-                -- 點擊右下角 "RUN" 按鈕開始轉檔
-                -- 計算 RUN 按鈕的絕對位置
-                set targetX to (item 1 of windowPosition) + 963
-                set targetY to (item 2 of windowPosition) + 568
-                
-                -- 使用 cliclick 來移動滑鼠到 RUN 按鈕的位置
-                do shell script "/usr/local/bin/cliclick m:" & targetX & "," & targetY
-                delay 1 -- 增加延遲以模擬滑鼠停留的效果
-                
-                -- 點擊 RUN 按鈕
-                do shell script "/usr/local/bin/cliclick c:" & targetX & "," & targetY
-                delay 3 -- 等待點擊完成並讓轉碼開始
-                
-                -- 使用一個 loop 來等待轉檔窗口的消失，表示轉檔完成
-                repeat until not (exists (sheet 1 of window 1))
-                    delay 5 -- 每隔 5 秒檢查一次轉檔進度窗口是否還存在
-                end repeat
-                
-                -- 移動滑鼠到更大的垃圾桶符號並點擊（位於 616,146）
-                set mouseX to 616
-                set mouseY to 146
-                do shell script "/usr/local/bin/cliclick m:" & mouseX & "," & mouseY
-                delay 1 -- 增加延遲以模擬滑鼠停留的效果
-                
-                -- 點擊垃圾桶符號來清除所有影片
-                do shell script "/usr/local/bin/cliclick c:" & mouseX & "," & mouseY
-                delay 2 -- 等待清除完成
-            end tell
-        end tell
-
-        -- 重命名轉檔完成的影片並移動到與字幕相同的目錄
-        set originalDir to "/Users/Mac/Movies/Mac Video Library/"
-        set originalFileName to trimmedName & "-1920*1340.mp4"
-        set originalPath to originalDir & originalFileName
-        set newFileName to trimmedName & "-1920*1340-zh.mp4"
-        set newFilePath to subtitleDirectory & "/" & newFileName
-
-        do shell script "mv " & quoted form of originalPath & " " & quoted form of newFilePath
+        try
+            do shell script ffmpegCommand
+        on error errMsg
+            display dialog errMsg buttons {"OK"} default button "OK"
+        end try
     end repeat
 end run
