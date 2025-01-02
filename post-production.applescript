@@ -162,11 +162,11 @@ on run {input, parameters}
                 else
                     
                     -- 讀取字幕：去除行號、時間碼、空行，每行末尾加 \n
-                    set shellScript to "
-                        cat " & quoted form of subtitlePath & " | sed -E '
-                            s/\\r//g
+                    set shellScript to "cat " & quoted form of subtitlePath & " | sed -E '
+                            1s/^\\xEF\\xBB\\xBF//
                             /^[0-9]+$/d
-                            / --> /d
+                            /[0-9]{2}:[0-9]{2}:[0-9]{2},[0-9]{3} --> [0-9]{2}:[0-9]{2}:[0-9]{2},[0-9]{3}/d
+                            s/\\r//g
                             /^$/d
                             s/$/\\\\n/
                         '

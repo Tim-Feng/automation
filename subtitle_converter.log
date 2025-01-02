@@ -1,0 +1,19 @@
+2025-01-02 11:37:44,984 - INFO - Starting conversion for: /Users/Mac/Desktop/Video Production/1. In Progress/5403/5403-zh.srt
+2025-01-02 11:37:44,984 - INFO - Processing subtitle file: /Users/Mac/Desktop/Video Production/1. In Progress/5403/5403-zh.srt
+2025-01-02 11:37:44,988 - INFO - Successfully loaded subtitle file
+2025-01-02 11:37:44,988 - ERROR - Error converting subtitle: SSAStyle.__init__() got an unexpected keyword argument 'name'
+2025-01-02 11:37:44,989 - ERROR - Traceback (most recent call last):
+  File "/Users/Mac/GitHub/automation/srt_to_ass_with_style.py", line 37, in convert_subtitle
+    style = pysubs2.SSAStyle(
+            ^^^^^^^^^^^^^^^^^
+TypeError: SSAStyle.__init__() got an unexpected keyword argument 'name'
+
+2025-01-02 11:37:44,989 - ERROR - Conversion failed
+2025-01-02 11:40:20,360 - INFO - Starting conversion for: /Users/Mac/Desktop/Video Production/1. In Progress/5403/5403-zh.srt
+2025-01-02 11:40:20,361 - INFO - Processing subtitle file: /Users/Mac/Desktop/Video Production/1. In Progress/5403/5403-zh.srt
+2025-01-02 11:40:20,363 - INFO - Successfully loaded subtitle file
+2025-01-02 11:40:20,363 - INFO - Style applied successfully
+2025-01-02 11:40:20,363 - INFO - Applied style to all subtitle lines
+2025-01-02 11:40:20,364 - INFO - Saving to: /Users/Mac/Desktop/Video Production/1. In Progress/5403/5403-1920*1340-zh.ass
+2025-01-02 11:40:20,365 - INFO - Successfully saved ASS file: /Users/Mac/Desktop/Video Production/1. In Progress/5403/5403-1920*1340-zh.ass
+2025-01-02 11:40:20,365 - INFO - Conversion completed successfully. Output file: /Users/Mac/Desktop/Video Production/1. In Progress/5403/5403-1920*1340-zh.ass
