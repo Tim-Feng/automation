@@ -160,10 +160,19 @@ on run {input, parameters}
                     my writeLog("ERROR", "找不到同名 Docs：" & trimmedName)
                     display notification "在此資料夾中找不到同名 Docs：「" & trimmedName & "」" with title "Google Docs"
                 else
+                    
                     -- 讀取字幕：去除行號、時間碼、空行，每行末尾加 \n
-                    set subtitleText to do shell script "
-                      cat " & quoted form of subtitlePath & " | sed -E 's/\\r//g; /^[0-9]+$/d; / --> /d; /^$/d; s/$/\\\\n/' 
+                    set shellScript to "
+                        cat " & quoted form of subtitlePath & " | sed -E '
+                            s/\\r//g
+                            /^[0-9]+$/d
+                            / --> /d
+                            /^$/d
+                            s/$/\\\\n/
+                        '
                     "
+                    
+                    set subtitleText to do shell script shellScript
 
                     -- 送入 Docs
                     set requestBody to "{\"requests\":[{\"insertText\":{\"location\":{\"index\":1},\"text\":" & quoted form of subtitleText & "}}]}"
