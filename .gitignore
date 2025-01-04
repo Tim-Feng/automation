@@ -1,2 +1,5 @@
 .env
-subtitle_processor.log
+
+# Logs
+logs/*
+*.log
