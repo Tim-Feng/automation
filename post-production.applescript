@@ -196,8 +196,8 @@ on run {input, parameters}
             try
                 set pythonScriptPath to "/Users/Mac/GitHub/automation/srt_to_ass_with_style.py"
                 -- 使用完整的 Python 路徑和環境設定
-                set pythonCmd to "/Users/Mac/GitHub/automation/venv/bin/python3"
-                set conversionCmd to pythonCmd & " " & quoted form of pythonScriptPath & " " & quoted form of subtitlePath
+                set pythonCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3"
+                set conversionCmd to "export PATH=/Library/Frameworks/Python.framework/Versions/3.11/bin:/usr/local/bin:$PATH && " & pythonCmd & " " & quoted form of pythonScriptPath & " " & quoted form of subtitlePath
                 
                 do shell script conversionCmd
                 my writeLog("SUCCESS", "字幕格式轉換完成")
