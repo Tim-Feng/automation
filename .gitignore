@@ -6,3 +6,6 @@ logs/*
 
 # Google Service Account憑證
 service_account.json
+
+# Python Virtual Environment
+venv/
