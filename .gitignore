@@ -3,3 +3,6 @@
 # Logs
 logs/*
 *.log
+
+# Google Service Account憑證
+service_account.json
