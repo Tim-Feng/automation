@@ -1,3 +1,21 @@
+-- 首先定義寫入日誌的函數
+on writeLog(level, message)
+    set logPath to "/Users/Mac/Library/Logs/gdrive_upload.log"
+    set dateStr to do shell script "date '+%Y-%m-%d %H:%M:%S'"
+    
+    -- 根據等級設定圖示
+    set levelIcon to ""
+    if level is "INFO" then
+        set levelIcon to "ℹ️"
+    else if level is "ERROR" then
+        set levelIcon to "❌"
+    else if level is "SUCCESS" then
+        set levelIcon to "✓"
+    end if
+    
+    do shell script "echo '" & dateStr & " " & levelIcon & " [" & level & "] " & message & "' >> " & quoted form of logPath
+end writeLog
+
 on run {input, parameters}
 -- 獲取機密資訊從環境變數
   set envPath to "/Users/Mac/Library/Mobile Documents/com~apple~Automator/Documents/.env"
@@ -163,12 +181,12 @@ on run {input, parameters}
     tell application "Keynote"
       tell the front document
         activate
-        delay 2 -- 確保窗口已經完全激活
+        delay 2 -- 確保窗口成功開啟
         
-        -- 使用 System Events 打開導出菜單
+        -- 使用 System Events 打開導出選單
         tell application "System Events"
           tell process "Keynote"
-            -- 先點擊 "File" 菜單
+            -- 先點擊 "File" 選單
             click menu bar item "File" of menu bar 1
             delay 2
             
@@ -252,26 +270,84 @@ on run {input, parameters}
         end tell
       end tell
     end tell
+
+    delay 3
     -- 確保轉檔完成後，關閉當前文檔
     tell application "Keynote"
       close the front document saving yes
     end tell
     
-    -- 創建 Google Drive 主資料夾
-    set createFolderUrl to "https://www.googleapis.com/drive/v3/files?supportsAllDrives=true"
-    set createFolderJson to "{\"name\": \"" & trimmedName & "\", \"mimeType\": \"application/vnd.google-apps.folder\", \"parents\": [\"" & parentID & "\"]}"
-    set googleDriveResponse to do shell script "curl -X POST -H \"Authorization: Bearer " & accessToken & "\" -H \"Content-Type: application/json\" -d " & quoted form of createFolderJson & " " & createFolderUrl
-    
-    -- 解析返回的 JSON 以獲取主資料夾 ID
-    set driveFolderID to do shell script "echo " & quoted form of googleDriveResponse & " | python3 -c \"import sys, json; print(json.load(sys.stdin)['id'])\""
-    
-    -- 創建四個子資料夾
-    set subFolders to {"字幕時間軸", "原始影片", "嵌入影片", "截圖"}
-    repeat with subFolder in subFolders
-      set createSubFolderJson to "{\"name\": \"" & subFolder & "\", \"mimeType\": \"application/vnd.google-apps.folder\", \"parents\": [\"" & driveFolderID & "\"]}"
-      do shell script "curl -X POST -H \"Authorization: Bearer " & accessToken & "\" -H \"Content-Type: application/json\" -d " & quoted form of createSubFolderJson & " " & createFolderUrl
-    end repeat
-    
+    try
+        my writeLog("INFO", "開始處理 Google Drive 上傳流程")
+        set createFolderUrl to "https://www.googleapis.com/drive/v3/files?supportsAllDrives=true"
+        set createFolderJson to "{\"name\": \"" & trimmedName & "\", \"mimeType\": \"application/vnd.google-apps.folder\", \"parents\": [\"" & parentID & "\"]}"
+        
+        set curlCommand to "curl -s -X POST -H \"Authorization: Bearer " & accessToken & "\" -H \"Content-Type: application/json\" -d " & quoted form of createFolderJson & " \"" & createFolderUrl & "\""
+        set googleDriveResponse to do shell script curlCommand
+        
+        set driveFolderID to do shell script "echo " & quoted form of googleDriveResponse & " | python3 -c \"import sys, json; print(json.load(sys.stdin)['id'])\""
+        
+        -- 創建子資料夾
+        set originalVideoFolderID to ""
+        set subFolders to {"字幕時間軸", "原始影片", "嵌入影片", "截圖"}
+        
+        repeat with subFolder in subFolders
+            try
+                set currentFolderName to contents of subFolder
+                set createSubFolderJson to "{\"name\": \"" & currentFolderName & "\", \"mimeType\": \"application/vnd.google-apps.folder\", \"parents\": [\"" & driveFolderID & "\"]}"
+                
+                set subFolderCommand to "curl -s -X POST -H \"Authorization: Bearer " & accessToken & "\" -H \"Content-Type: application/json\" -d " & quoted form of createSubFolderJson & " \"" & createFolderUrl & "\""
+                set subFolderResponse to do shell script subFolderCommand
+                
+                set currentFolderID to do shell script "echo " & quoted form of subFolderResponse & " | python3 -c 'import sys, json; print(json.load(sys.stdin)[\"id\"])'"
+                
+                if currentFolderName is "原始影片" then
+                    set originalVideoFolderID to currentFolderID
+                end if
+                
+            on error errMsg
+                my writeLog("ERROR", "創建子資料夾 " & currentFolderName & " 失敗：" & errMsg)
+                return input
+            end try
+        end repeat
+        
+        -- 上傳原始影片
+        try
+            set createFileUrl to "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true"
+            set createFileJson to "{\"name\": \"" & originalName & "\", \"parents\": [\"" & originalVideoFolderID & "\"]}"
+            
+            set uploadUrlCommand to "curl -s -X POST -H \"Authorization: Bearer " & accessToken & "\" -H \"Content-Type: application/json\" -H \"X-Upload-Content-Type: video/mp4\" -d " & quoted form of createFileJson & " -i \"" & createFileUrl & "\""
+            set uploadUrlResponse to do shell script uploadUrlCommand & " | grep -i 'Location: ' | cut -d' ' -f2- | tr -d '\\r'"
+            
+            if uploadUrlResponse contains "http" then
+                set uploadCommand to "curl -s -X PUT -H \"Authorization: Bearer " & accessToken & "\" -H \"Content-Type: video/mp4\" --data-binary @" & quoted form of movieFilePath & " \"" & uploadUrlResponse & "&supportsAllDrives=true\""
+                set uploadResponse to do shell script uploadCommand
+                
+                if uploadResponse contains "\"kind\": \"drive#file\"" and uploadResponse contains "\"id\":" then
+                    set tid to offset of "\"id\": \"" in uploadResponse
+                    set tmp to text (tid + 7) thru -1 of uploadResponse
+                    set fileID to text 1 thru ((offset of "\"" in tmp) - 1) of tmp
+                else
+                    my writeLog("ERROR", "上傳失敗")
+                    error "上傳失敗：無效的回應"
+                end if
+            else
+                my writeLog("ERROR", "獲取上傳 URL 失敗")
+                error "無效的上傳 URL"
+            end if
+            
+        on error errMsg
+            my writeLog("ERROR", "上傳失敗：" & errMsg)
+            return input
+        end try
+        
+        my writeLog("SUCCESS", "Google Drive 處理流程完成")
+        
+    on error errMsg
+        my writeLog("ERROR", "整體處理失敗：" & errMsg)
+        return input
+    end try
+
     -- 創建 Google Doc 文件
     set createDocUrl to "https://www.googleapis.com/drive/v3/files?supportsAllDrives=true"
     set createDocJson to "{\"name\": \"" & trimmedName & "\", \"mimeType\": \"application/vnd.google-apps.document\", \"parents\": [\"" & driveFolderID & "\"]}"
