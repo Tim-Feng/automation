@@ -161,17 +161,21 @@ on run {input, parameters}
                     display notification "在此資料夾中找不到同名 Docs：「" & trimmedName & "」" with title "Google Docs"
                 else
                     
-                    -- 讀取字幕：去除行號、時間碼、空行，每行末尾加 \n
+                    -- 處理字幕內容
                     set shellScript to "cat " & quoted form of subtitlePath & " | sed -E '
-                            1s/^\\xEF\\xBB\\xBF//
-                            /^[0-9]+$/d
-                            /[0-9]{2}:[0-9]{2}:[0-9]{2},[0-9]{3} --> [0-9]{2}:[0-9]{2}:[0-9]{2},[0-9]{3}/d
-                            s/\\r//g
-                            /^$/d
-                            s/$/\\\\n/
-                        '
-                    "
-                    
+                        # 移除 UTF-8 BOM
+                        1s/^\\xEF\\xBB\\xBF//
+                        # 移除時間碼行
+                        /^[0-9]{2}:[0-9]{2}:[0-9]{2},[0-9]{3}.*-->.*/d
+                        # 移除純數字行（確保整行只有數字）
+                        /^[[:space:]]*[0-9]+[[:space:]]*$/d
+                        # 移除 Windows 的換行符號
+                        s/\\r//g
+                        # 移除空行
+                        /^$/d
+                        # 在每行結尾加上 \n
+                        s/$/\\\\n/
+                    '"
                     set subtitleText to do shell script shellScript
 
                     -- 送入 Docs
