@@ -9,6 +9,8 @@ from logging.handlers import RotatingFileHandler
 import requests
 from requests.auth import HTTPBasicAuth
 from typing import Optional, Dict, List
+import time  # 用於重試延遲
+import glob  # 用於查找部分下載的文件
 
 # ========== 全域功能開關 ==========
 ENABLE_OPENAI = False     
@@ -142,90 +144,170 @@ def get_next_id(sheet):
     max_id = max(id_numbers) if id_numbers else 0
     return max_id + 1
 
-def get_video_metadata(youtube_url):
+def get_video_metadata(youtube_url, max_retries=3):
     """使用 yt_dlp 擷取影片標題和時長"""
     write_log("INFO", f"擷取影片資訊: {youtube_url}")
-    ydl_opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'skip_download': True,
-        'forcejson': True,
-        'noplaylist': True
-    }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(youtube_url, download=False)
+    
+    for attempt in range(max_retries):
+        try:
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'skip_download': True,
+                'forcejson': True,
+                'noplaylist': True,
+                'no_cookies': True
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(youtube_url, download=False)
+                
+                title = info.get('title', '無標題')
+                duration = info.get('duration', 0)
+                
+                # 時長轉換為 MM:SS 格式
+                minutes, seconds = divmod(duration, 60)
+                formatted_duration = f"{int(minutes)}:{int(seconds):02}"
+                
+                write_log("INFO", f"影片標題: {title}, 時長: {formatted_duration}")
+                return title, formatted_duration
+                
+        except Exception as e:
+            if attempt < max_retries - 1:
+                write_log("ERROR", f"擷取資訊失敗 (嘗試 {attempt + 1}/{max_retries}): {str(e)}")
+                time.sleep(5)
+                continue
+            raise
 
-    title = info.get('title', '無標題')
-    duration = info.get('duration', 0)
-
-    # 時長轉換為 MM:SS 格式
-    minutes, seconds = divmod(duration, 60)
-    formatted_duration = f"{int(minutes)}:{int(seconds):02}"
-
-    write_log("INFO", f"影片標題: {title}, 時長: {formatted_duration}")
-    return title, formatted_duration
-
-def download_only(youtube_url, video_id, download_dir):
-    """只使用 yt_dlp 下載，不做後處理"""
+def download_video(youtube_url, video_id, download_dir, max_retries=3):
+    """下載 YouTube 影片的主要函數"""
     write_log("INFO", f"開始下載影片 ID {video_id}: {youtube_url}")
-    ydl_opts = {
-        'outtmpl': os.path.join(download_dir, f"{video_id}.%(ext)s"),
-        'format': 'bestvideo[height>=1080]+bestaudio/best',  
-        'quiet': True,
-        'no_warnings': True,
-        'noplaylist': True
-    }
+    
+    # 清理可能存在的部分下載文件
+    pattern = f"{video_id}.f*.mp4"
+    partial_files = glob.glob(os.path.join(download_dir, pattern))
+    for file in partial_files:
+        try:
+            os.remove(file)
+            write_log("INFO", f"已清理部分下載文件: {file}")
+        except Exception as e:
+            write_log("ERROR", f"清理文件失敗 {file}: {str(e)}")
+    
+    # 定義下載策略順序
+    format_strategies = [
+        {
+            'format': 'bestvideo[height>=1080][vcodec^=avc1]+bestaudio/best',
+            'postprocessor_args': [
+                '-c:v', 'copy',
+                '-c:a', 'aac',
+                '-movflags', '+faststart',
+                '-threads', '0'
+            ]
+        },
+        {
+            'format': 'bestvideo[height>=1080]+bestaudio/best',
+            'postprocessor_args': [
+                '-c:v', 'libx264',
+                '-c:a', 'aac',
+                '-movflags', '+faststart',
+                '-pix_fmt', 'yuv420p',
+                '-profile:v', 'main',
+                '-level', '3.1',
+                '-preset', 'ultrafast',
+                '-threads', '0'
+            ]
+        },
+        {
+            'format': 'best',
+            'postprocessor_args': [
+                '-c:v', 'copy',
+                '-c:a', 'copy'
+            ]
+        }
+    ]
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([youtube_url])
+    for attempt in range(max_retries):
+        try:
+            # 選擇當前策略
+            strategy = format_strategies[min(attempt, len(format_strategies) - 1)]
+            
+            ydl_opts = {
+                'outtmpl': os.path.join(download_dir, f"{video_id}.%(ext)s"),
+                'format': strategy['format'],
+                'merge_output_format': 'mp4',
+                'no_cookies': True,
+                'quiet': False,
+                'verbose': True,
+                'noplaylist': True,
+                'concurrent_fragment_downloads': 8,
+                'retries': 10,
+                'fragment_retries': 10,
+                'ffmpeg_location': '/usr/local/bin/ffmpeg',  # 指定 ffmpeg 路徑
+                'postprocessor_args': {
+                    'ffmpeg': strategy['postprocessor_args']
+                }
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                try:
+                    write_log("INFO", f"使用下載策略 {attempt + 1}: {strategy['format']}")
+                    
+                    start_time = time.time()
+                    info = ydl.extract_info(youtube_url)
+                    selected_format = info.get('format_id', 'unknown')
+                    resolution = info.get('height', 'unknown')
+                    write_log("INFO", f"選擇的格式: {selected_format}, 解析度: {resolution}p")
+                    
+                    end_time = time.time()
+                    write_log("SUCCESS", f"下載成功，耗時: {end_time - start_time:.1f} 秒")
+                    return True
+                    
+                except Exception as e:
+                    error_msg = str(e)
+                    if "HTTP Error 403" in error_msg:
+                        write_log("ERROR", f"策略 {attempt + 1} 失敗: {error_msg}")
+                        continue
+                    raise
+                    
+        except Exception as e:
+            write_log("ERROR", f"下載失敗 (嘗試 {attempt + 1}/{max_retries}): {str(e)}")
+            if attempt < max_retries - 1:
+                write_log("INFO", "等待 5 秒後使用下一個策略...")
+                time.sleep(5)
+            continue
+    
+    raise Exception("所有下載嘗試均失敗")
 
 def find_downloaded_file(download_dir, video_id):
-    """尋找下載的檔案"""
+    """尋找下載的檔案，優先找 .mp4"""
+    # 先找 .mp4
+    mp4_file = os.path.join(download_dir, f"{video_id}.mp4")
+    if os.path.exists(mp4_file):
+        return mp4_file
+        
+    # 找其他可能的檔案
     for fname in os.listdir(download_dir):
         if fname.startswith(str(video_id) + "."):
             return os.path.join(download_dir, fname)
     return None
 
-def ffmpeg_reencode(input_file, output_file):
-    """使用 ffmpeg 重新編碼"""
-    write_log("INFO", f"開始 ffmpeg 轉檔：{input_file} -> {output_file}")
-
-    cmd = [
-        "ffmpeg",
-        "-i", input_file,
-        "-c:v", "libx264",
-        "-crf", "23",
-        "-preset", "medium",
-        "-c:a", "aac",
-        "-b:a", "192k",
-        "-movflags", "+faststart",
-        output_file
-    ]
-
-    completed = subprocess.run(cmd, capture_output=True, text=True)
-
-    if completed.returncode != 0:
-        write_log("ERROR", f"ffmpeg 轉檔失敗: {completed.stderr}")
-        raise RuntimeError("ffmpeg re-encode failed")
-
-    write_log("INFO", f"轉檔完成，輸出檔：{output_file}")
-
 def download_and_convert(youtube_url, video_id, download_dir):
-    """下載並轉檔"""
-    download_only(youtube_url, video_id, download_dir)
-    
-    in_file = find_downloaded_file(download_dir, video_id)
-    if not in_file:
-        raise FileNotFoundError(f"找不到下載檔案: {video_id}.*")
-
-    out_file = os.path.join(download_dir, f"{video_id}.mp4")
-    ffmpeg_reencode(in_file, out_file)
-
-    if os.path.exists(in_file) and in_file != out_file:
-        os.remove(in_file)
-        write_log("INFO", f"已刪除原始檔：{in_file}")
-
-    return out_file
+    """下載並確保輸出為 MP4 格式"""
+    try:
+        success = download_video(youtube_url, video_id, download_dir)
+        if not success:
+            raise Exception("下載失敗")
+        
+        # 找尋下載的檔案
+        output_file = find_downloaded_file(download_dir, video_id)
+        if not output_file:
+            raise FileNotFoundError(f"找不到下載檔案: {video_id}.*")
+            
+        return output_file
+        
+    except Exception as e:
+        write_log("ERROR", f"下載過程發生錯誤: {str(e)}")
+        raise
 
 def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, download_dir):
     """處理單筆資料"""
