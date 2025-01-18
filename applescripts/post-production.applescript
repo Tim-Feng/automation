@@ -83,7 +83,7 @@ on run {input, parameters}
         --------------------------------------------------------
         my writeLog("INFO", "開始執行字幕轉換腳本...")
         try
-            set pythonScriptPath to "/Users/Mac/GitHub/automation/srt_to_ass_with_style.py"
+            set pythonScriptPath to "/Users/Mac/GitHub/automation/scripts/srt_to_ass_with_style.py"
             -- 使用完整的 Python 路徑和環境設定
             set pythonCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3"
             set conversionCmd to "export PATH=/Library/Frameworks/Python.framework/Versions/3.11/bin:/usr/local/bin:$PATH && " & pythonCmd & " " & quoted form of pythonScriptPath & " " & quoted form of subtitlePath

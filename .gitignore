@@ -1,8 +1,17 @@
-.env
+# 環境設定檔（敏感資訊）
+config/.env
 
 # Logs
-logs/*
+logs/
 *.log
 
-# Google Service Account憑證
-service_account.json
+# Google Service Account 憑證（敏感資訊）
+config/service_account.json
+
+# macOS 系統檔案
+.DS_Store
+
+# Python 編譯產生的檔案
+__pycache__/
+*.pyc
+*.pyo
