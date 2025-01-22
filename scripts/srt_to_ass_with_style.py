@@ -11,13 +11,29 @@ except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "pysubs2"])
     import pysubs2
 
+
+# 設定主要日誌路徑和符號連結
+main_log_path = "/Users/Mac/Library/Logs/subtitle_converter.log"
+symlink_path = "/Users/Mac/GitHub/automation/logs/subtitle_converter.log"
+
+# 確保目錄存在
+os.makedirs(os.path.dirname(main_log_path), exist_ok=True)
+os.makedirs(os.path.dirname(symlink_path), exist_ok=True)
+
+# 創建符號連結（如果不存在）
+if not os.path.exists(symlink_path):
+    try:
+        os.symlink(main_log_path, symlink_path)
+    except FileExistsError:
+        pass
+
 # 設定日誌
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),  # 輸出到控制台
-        logging.FileHandler(os.path.expanduser("~/Library/Logs/subtitle_converter.log"))  # 保存到用戶的 Logs 目錄
+        logging.FileHandler(main_log_path, mode='a', encoding='utf-8')  # 正確
     ]
 )
 logger = logging.getLogger(__name__)
@@ -97,19 +113,27 @@ def convert_subtitle(srt_path):
         return None
 
 if __name__ == "__main__":
-    # 檢查是否提供了輸入文件路徑
-    if len(sys.argv) != 2:
-        print("Usage: python3 srt_to_ass_with_style.py <path_to_srt_file>")
-        sys.exit(1)
-    
-    srt_path = sys.argv[1]
-    logger.info(f"Starting conversion for: {srt_path}")
-    
-    # 執行轉換
-    output_file = convert_subtitle(srt_path)
-    
-    if output_file:
-        logger.info(f"Conversion completed successfully. Output file: {output_file}")
-    else:
-        logger.error("Conversion failed")
+    try:
+        # 檢查是否提供了輸入文件路徑
+        if len(sys.argv) != 2:
+            print("Usage: python3 srt_to_ass_with_style.py <path_to_srt_file>")
+            sys.exit(1)
+        
+        srt_path = sys.argv[1]
+        logger.info(f"Starting conversion for: {srt_path}")
+        
+        # 執行轉換
+        output_file = convert_subtitle(srt_path)
+        
+        if output_file:
+            logger.info(f"Conversion completed successfully. Output file: {output_file}")
+            sys.exit(0)
+        else:
+            logger.error("Conversion failed")
+            sys.exit(1)
+            
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         sys.exit(1)
