@@ -120,6 +120,36 @@ def write_log(level, message):
 
 def setup_google_sheets():
     """連線 Google Sheets"""
+    # 除錯資訊
+    print("Current working directory:", os.getcwd())
+    print("Script location:", os.path.dirname(os.path.abspath(__file__)))
+    
+    # 修改 .env 檔案的路徑
+    dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config', '.env')
+    print("Looking for .env at:", dotenv_path)
+    
+    if os.path.exists(dotenv_path):
+        load_dotenv(dotenv_path)
+        print(".env file loaded from:", dotenv_path)
+    else:
+        print(".env file not found at:", dotenv_path)
+    
+    # 再次檢查環境變數
+    creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    print("Credentials path after loading .env:", creds_path)
+    
+    if not creds_path:
+        raise ValueError("未設置 GOOGLE_APPLICATION_CREDENTIALS 環境變數")
+        
+    # 構建 service account 檔案的完整路徑
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    service_account_path = os.path.join(base_dir, creds_path.lstrip('./'))
+    
+    if not os.path.exists(service_account_path):
+        raise FileNotFoundError(f"找不到憑證檔案：{service_account_path}")
+        
+    print("Service account file path:", service_account_path)
+    
     scope = [
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/spreadsheets",
@@ -127,10 +157,7 @@ def setup_google_sheets():
         "https://www.googleapis.com/auth/drive"
     ]
 
-    creds = Credentials.from_service_account_file(
-        os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
-        scopes=scope
-    )
+    creds = Credentials.from_service_account_file(service_account_path, scopes=scope)
     client = gspread.authorize(creds)
 
     spreadsheet = client.open("影片廣告資料庫清單")
@@ -181,7 +208,7 @@ def get_video_metadata(youtube_url, max_retries=3):
 
 def download_video(youtube_url, video_id, download_dir, max_retries=3):
     """下載 YouTube 影片的主要函數"""
-    write_log("INFO", f"開始下載影片 ID {video_id}: {youtube_url}")
+    write_log("INFO", f"開始下載影片 ID {video_id}")
     
     # 清理可能存在的部分下載文件
     pattern = f"{video_id}.f*.mp4"
@@ -189,43 +216,9 @@ def download_video(youtube_url, video_id, download_dir, max_retries=3):
     for file in partial_files:
         try:
             os.remove(file)
-            write_log("INFO", f"已清理部分下載文件: {file}")
         except Exception as e:
             write_log("ERROR", f"清理文件失敗 {file}: {str(e)}")
     
-    # 定義下載策略順序
-    format_strategies = [
-        {
-            'format': 'bestvideo[height>=1080][vcodec^=avc1]+bestaudio/best',
-            'postprocessor_args': [
-                '-c:v', 'copy',
-                '-c:a', 'aac',
-                '-movflags', '+faststart',
-                '-threads', '0'
-            ]
-        },
-        {
-            'format': 'bestvideo[height>=1080]+bestaudio/best',
-            'postprocessor_args': [
-                '-c:v', 'libx264',
-                '-c:a', 'aac',
-                '-movflags', '+faststart',
-                '-pix_fmt', 'yuv420p',
-                '-profile:v', 'main',
-                '-level', '3.1',
-                '-preset', 'ultrafast',
-                '-threads', '0'
-            ]
-        },
-        {
-            'format': 'best',
-            'postprocessor_args': [
-                '-c:v', 'copy',
-                '-c:a', 'copy'
-            ]
-        }
-    ]
-
     for attempt in range(max_retries):
         try:
             # 選擇當前策略
@@ -236,48 +229,42 @@ def download_video(youtube_url, video_id, download_dir, max_retries=3):
                 'format': strategy['format'],
                 'merge_output_format': 'mp4',
                 'no_cookies': True,
-                'quiet': False,
-                'verbose': True,
+                'quiet': True,
+                'verbose': False,
                 'noplaylist': True,
                 'concurrent_fragment_downloads': 8,
                 'retries': 10,
                 'fragment_retries': 10,
-                'ffmpeg_location': '/usr/local/bin/ffmpeg',  # 指定 ffmpeg 路徑
+                'ffmpeg_location': '/usr/local/bin/ffmpeg',
                 'postprocessor_args': {
                     'ffmpeg': strategy['postprocessor_args']
                 }
             }
             
+            start_time = time.time()
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 try:
-                    write_log("INFO", f"使用下載策略 {attempt + 1}: {strategy['format']}")
-                    
-                    start_time = time.time()
                     info = ydl.extract_info(youtube_url)
-                    selected_format = info.get('format_id', 'unknown')
-                    resolution = info.get('height', 'unknown')
-                    write_log("INFO", f"選擇的格式: {selected_format}, 解析度: {resolution}p")
-                    
                     end_time = time.time()
-                    write_log("SUCCESS", f"下載成功，耗時: {end_time - start_time:.1f} 秒")
+                    duration = end_time - start_time
+                    write_log("SUCCESS", f"影片 ID {video_id} 下載完成，耗時 {duration:.1f} 秒")
                     return True
                     
                 except Exception as e:
                     error_msg = str(e)
                     if "HTTP Error 403" in error_msg:
-                        write_log("ERROR", f"策略 {attempt + 1} 失敗: {error_msg}")
+                        write_log("ERROR", f"下載嘗試 {attempt + 1} 失敗")
                         continue
                     raise
                     
         except Exception as e:
             write_log("ERROR", f"下載失敗 (嘗試 {attempt + 1}/{max_retries}): {str(e)}")
             if attempt < max_retries - 1:
-                write_log("INFO", "等待 5 秒後使用下一個策略...")
                 time.sleep(5)
             continue
     
     raise Exception("所有下載嘗試均失敗")
-
+    
 def find_downloaded_file(download_dir, video_id):
     """尋找下載的檔案，優先找 .mp4"""
     # 先找 .mp4
@@ -431,6 +418,10 @@ def check_pending_and_process(sheet):
     write_log("INFO", f"處理完成，成功 {success_count} 筆，失敗 {fail_count} 筆")
 
 def main():
+    # 確保在程式開始時就載入環境變數
+    dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config', '.env')
+    load_dotenv(dotenv_path)
+    
     sheet = setup_google_sheets()
     check_pending_and_process(sheet)
 
