@@ -104,13 +104,14 @@ on run {input, parameters}
             set shouldContinue to true
             try
                 set newSrtPath to targetFolderPath & "/" & subtitleID & "-zh.srt"
-                do shell script "cp " & quoted form of subtitlePath & " " & quoted form of newSrtPath
+                
+                -- 執行字幕格式化
+                set formatCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 /Users/Mac/GitHub/automation/scripts/add_spaces.py " & quoted form of subtitlePath & " " & quoted form of newSrtPath
+                do shell script formatCmd
                 
                 my writeLog("SUCCESS", "成功複製並重命名字幕檔：" & subtitleID)
-                
-                -- 顯示通知
                 display notification "檔案複製成功：" & subtitleID with title "字幕處理"
-                
+    
             on error errMsg
                 my writeLog("ERROR", "複製檔案失敗：" & errMsg)
                 display notification "複製失敗：" & subtitleID with title "字幕處理"
