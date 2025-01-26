@@ -1,52 +1,28 @@
 import os
-import subprocess
-import gspread
-from google.oauth2.service_account import Credentials
 import yt_dlp
 from dotenv import load_dotenv
-import logging
-from logging.handlers import RotatingFileHandler
 import requests
 from requests.auth import HTTPBasicAuth
 from typing import Optional, Dict, List
-import time  # 用於重試延遲
-import glob  # 用於查找部分下載的文件
+import time
+import glob
+from logger import setup_logger
+from google_sheets import setup_google_sheets, get_next_id, batch_update
+
+logger = setup_logger('content_automation')
 
 # ========== 全域功能開關 ==========
 ENABLE_OPENAI = False     
 ENABLE_WORDPRESS = True  
 # =================================
 
-# 載入環境變數
-load_dotenv()
-
-# 定義等級到圖示的映射
-LEVEL_ICONS = {
-    'INFO': 'ℹ️',
-    'ERROR': '❌',
-    'SUCCESS': '✓',
-}
-
-class IconFormatter(logging.Formatter):
-    def format(self, record):
-        icon = LEVEL_ICONS.get(record.levelname, '')
-        return f"{self.formatTime(record, '%Y-%m-%d %H:%M:%S')} {icon} [{record.levelname}] {record.getMessage()}"
-
-# 創建 Logger
-logger = logging.getLogger('content_automation')
-logger.setLevel(logging.INFO)
-
-# 創建 RotatingFileHandler，最大 5MB，保留 5 個備份
-log_file_path = os.path.expanduser("~/Library/Logs/content_automation.log")
-rotating_handler = RotatingFileHandler(log_file_path, maxBytes=5*1024*1024, backupCount=5)
-rotating_handler.setLevel(logging.INFO)
-
-# 設置自定義 Formatter
-formatter = IconFormatter('%(asctime)s - %(levelname)s - %(message)s')
-rotating_handler.setFormatter(formatter)
-
-# 將處理器添加到 Logger
-logger.addHandler(rotating_handler)
+# 影片下載策略配置
+format_strategies = [
+    {
+        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
+        'postprocessor_args': ['-c:v', 'libx264', '-crf', '23']
+    }
+]
 
 class WordPressAPI:
     def __init__(self):
@@ -104,76 +80,10 @@ class WordPressAPI:
             raise Exception(f"建立草稿失敗: {response.text}")
         
         return response.json()
-    
-
-def write_log(level, message):
-    """簡化的日誌函式"""
-    level_up = level.upper()
-    if level_up == 'INFO':
-        logger.info(message)
-    elif level_up == 'ERROR':
-        logger.error(message)
-    elif level_up == 'SUCCESS':
-        logger.info(message)
-    else:
-        logger.info(message)
-
-def setup_google_sheets():
-    """連線 Google Sheets"""
-    # 除錯資訊
-    print("Current working directory:", os.getcwd())
-    print("Script location:", os.path.dirname(os.path.abspath(__file__)))
-    
-    # 修改 .env 檔案的路徑
-    dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config', '.env')
-    print("Looking for .env at:", dotenv_path)
-    
-    if os.path.exists(dotenv_path):
-        load_dotenv(dotenv_path)
-        print(".env file loaded from:", dotenv_path)
-    else:
-        print(".env file not found at:", dotenv_path)
-    
-    # 再次檢查環境變數
-    creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-    print("Credentials path after loading .env:", creds_path)
-    
-    if not creds_path:
-        raise ValueError("未設置 GOOGLE_APPLICATION_CREDENTIALS 環境變數")
-        
-    # 構建 service account 檔案的完整路徑
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    service_account_path = os.path.join(base_dir, creds_path.lstrip('./'))
-    
-    if not os.path.exists(service_account_path):
-        raise FileNotFoundError(f"找不到憑證檔案：{service_account_path}")
-        
-    print("Service account file path:", service_account_path)
-    
-    scope = [
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive.file",
-        "https://www.googleapis.com/auth/drive"
-    ]
-
-    creds = Credentials.from_service_account_file(service_account_path, scopes=scope)
-    client = gspread.authorize(creds)
-
-    spreadsheet = client.open("影片廣告資料庫清單")
-    sheet = spreadsheet.worksheet("廣告清單")
-    return sheet
-
-def get_next_id(sheet):
-    """A欄可能有舊 ID，從第三列開始，找目前最大的 ID 並加1"""
-    id_values = sheet.col_values(1)[2:]  # 跳過前兩列(標題)
-    id_numbers = [int(x) for x in id_values if x.isdigit()]
-    max_id = max(id_numbers) if id_numbers else 0
-    return max_id + 1
 
 def get_video_metadata(youtube_url, max_retries=3):
     """使用 yt_dlp 擷取影片標題和時長"""
-    write_log("INFO", f"擷取影片資訊: {youtube_url}")
+    logger.info(f"擷取影片資訊: {youtube_url}")
     
     for attempt in range(max_retries):
         try:
@@ -196,19 +106,19 @@ def get_video_metadata(youtube_url, max_retries=3):
                 minutes, seconds = divmod(duration, 60)
                 formatted_duration = f"{int(minutes)}:{int(seconds):02}"
                 
-                write_log("INFO", f"影片標題: {title}, 時長: {formatted_duration}")
+                logger.info(f"影片標題: {title}, 時長: {formatted_duration}")
                 return title, formatted_duration
                 
         except Exception as e:
             if attempt < max_retries - 1:
-                write_log("ERROR", f"擷取資訊失敗 (嘗試 {attempt + 1}/{max_retries}): {str(e)}")
+                logger.error(f"擷取資訊失敗 (嘗試 {attempt + 1}/{max_retries}): {str(e)}")
                 time.sleep(5)
                 continue
             raise
 
 def download_video(youtube_url, video_id, download_dir, max_retries=3):
     """下載 YouTube 影片的主要函數"""
-    write_log("INFO", f"開始下載影片 ID {video_id}")
+    logger.info(f"開始下載影片 ID {video_id}")
     
     # 清理可能存在的部分下載文件
     pattern = f"{video_id}.f*.mp4"
@@ -217,7 +127,7 @@ def download_video(youtube_url, video_id, download_dir, max_retries=3):
         try:
             os.remove(file)
         except Exception as e:
-            write_log("ERROR", f"清理文件失敗 {file}: {str(e)}")
+            logger.error(f"清理文件失敗 {file}: {str(e)}")
     
     for attempt in range(max_retries):
         try:
@@ -247,18 +157,18 @@ def download_video(youtube_url, video_id, download_dir, max_retries=3):
                     info = ydl.extract_info(youtube_url)
                     end_time = time.time()
                     duration = end_time - start_time
-                    write_log("SUCCESS", f"影片 ID {video_id} 下載完成，耗時 {duration:.1f} 秒")
+                    logger.info(f"影片 ID {video_id} 下載完成，耗時 {duration:.1f} 秒")
                     return True
                     
                 except Exception as e:
                     error_msg = str(e)
                     if "HTTP Error 403" in error_msg:
-                        write_log("ERROR", f"下載嘗試 {attempt + 1} 失敗")
+                        logger.error(f"下載嘗試 {attempt + 1} 失敗")
                         continue
                     raise
                     
         except Exception as e:
-            write_log("ERROR", f"下載失敗 (嘗試 {attempt + 1}/{max_retries}): {str(e)}")
+            logger.error(f"下載失敗 (嘗試 {attempt + 1}/{max_retries}): {str(e)}")
             if attempt < max_retries - 1:
                 time.sleep(5)
             continue
@@ -293,7 +203,7 @@ def download_and_convert(youtube_url, video_id, download_dir):
         return output_file
         
     except Exception as e:
-        write_log("ERROR", f"下載過程發生錯誤: {str(e)}")
+        logger.error(f"下載過程發生錯誤: {str(e)}")
         raise
 
 def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, download_dir):
@@ -341,10 +251,10 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                     'values': [[draft_link]]
                 })
                 
-                write_log("SUCCESS", f"WordPress 草稿建立成功: {draft_link}")
+                logger.info(f"WordPress 草稿建立成功: {draft_link}")
                 
             except Exception as wp_error:
-                write_log("ERROR", f"WordPress 錯誤: {wp_error}")
+                logger.error(f"WordPress 錯誤: {wp_error}")
                 updates.append({
                     'range': f'H{row_index}',
                     'values': [['WordPress 錯誤']]
@@ -361,10 +271,10 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
             'values': [['done']]
         })
 
-        write_log("SUCCESS", f"影片 ID {assigned_id} 已完成處理")
+        logger.info(f"影片 ID {assigned_id} 已完成處理")
 
     except Exception as e:
-        write_log("ERROR", f"處理影片 ID {assigned_id} 時發生錯誤: {e}")
+        logger.error(f"處理影片 ID {assigned_id} 時發生錯誤: {e}")
         updates.append({
             'range': f'J{row_index}',
             'values': [['error']]
@@ -382,7 +292,7 @@ def check_pending_and_process(sheet):
     success_count = 0
     fail_count = 0
 
-    write_log("INFO", f"開始掃描資料，共 {len(all_values)-2} 筆資料可供檢查")
+    logger.info(f"開始掃描資料，共 {len(all_values)-2} 筆資料可供檢查")
 
     for i, row in enumerate(all_values, start=1):
         if i <= 2:  # 跳過前兩列
@@ -410,12 +320,12 @@ def check_pending_and_process(sheet):
                 fail_count += 1
 
     if updates:
-        sheet.batch_update(updates)
-        write_log("INFO", f"已批量更新 {len(updates)} 個儲存格")
+        batch_update(sheet, updates)  # 改用導入的函數
+        logger.info(f"已批量更新 {len(updates)} 個儲存格")
     else:
-        write_log("INFO", "沒有符合條件的列可處理")
+        logger.info("沒有符合條件的列可處理")
 
-    write_log("INFO", f"處理完成，成功 {success_count} 筆，失敗 {fail_count} 筆")
+    logger.info(f"處理完成，成功 {success_count} 筆，失敗 {fail_count} 筆")
 
 def main():
     # 確保在程式開始時就載入環境變數

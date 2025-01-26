@@ -1,8 +1,14 @@
 import re
+import sys
+from logger import setup_logger
+
+logger = setup_logger('subtitle_formatter')
 
 def format_subtitle_spacing(input_file, output_file=None):
     if output_file is None:
         output_file = input_file
+
+    logger.info(f"處理檔案：{input_file}")
     
     def process_text(text):
         if ' --> ' in text or text.strip().isdigit():
@@ -29,16 +35,22 @@ def format_subtitle_spacing(input_file, output_file=None):
         text = re.sub(r'\s+', ' ', text)
         return text.strip() + '\n'  # 保留換行符號
 
-    with open(input_file, 'r', encoding='utf-8-sig') as f:
-        lines = f.readlines()
-    
-    processed_lines = [process_text(line) for line in lines]
-    
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.writelines(processed_lines)
+    try:
+        with open(input_file, 'r', encoding='utf-8-sig') as f:
+            lines = f.readlines()
+        
+        processed_lines = [process_text(line) for line in lines]
+        
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.writelines(processed_lines)
+            
+        logger.info(f"處理完成：{output_file}")
+        
+    except Exception as e:
+        logger.error(f"處理失敗：{str(e)}")
+        raise
 
 if __name__ == '__main__':
-    import sys
     if len(sys.argv) < 2:
         print('Usage: python format_subtitle.py <input_file> [output_file]')
         sys.exit(1)
