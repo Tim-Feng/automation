@@ -384,6 +384,49 @@ on run {input, parameters}
                     my writeLog("INFO", "未找到對應的 Google Docs，跳過更新內容")
                 end if
 
+                -- 4.8 搜尋「字幕時間軸」資料夾並上傳字幕檔
+                my writeLog("INFO", "搜尋「字幕時間軸」資料夾...")
+
+                set searchSubtitleFolderQuery to "mimeType='application/vnd.google-apps.folder' and name='字幕時間軸' and '" & folderId & "' in parents and trashed=false"
+                set subtitleFolderQueryEncoded to do shell script ¬
+                   "python3 -c \"import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))\" " & ¬
+                   quoted form of searchSubtitleFolderQuery
+
+                set searchSubtitleFolderCmd to "curl -s -X GET 'https://www.googleapis.com/drive/v3/files?q=" & subtitleFolderQueryEncoded & ¬
+                   "&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives' " & ¬
+                   "-H 'Authorization: Bearer " & accessToken & "'"
+
+                set subtitleFolderResponse to do shell script searchSubtitleFolderCmd
+                set subtitleFolderId to do shell script "echo " & quoted form of subtitleFolderResponse & ¬
+                   " | python3 -c \"import sys, json; arr=json.load(sys.stdin).get('files', []); print(arr[0]['id'] if arr else '')\""
+
+                -- 找出所有字幕檔
+                set findCmd to "find " & quoted form of targetFolderPath & " -maxdepth 1 -type f \\( -name \"*.srt\" -o -name \"*.ass\" -o -name \"*.vtt\" \\)"
+                set subtitleFiles to paragraphs of (do shell script findCmd)
+
+                repeat with filePath in subtitleFiles
+                   set fileName to do shell script "basename " & quoted form of filePath
+                   
+                   -- 建立上傳 session
+                   set createFileBody to "{\"name\": \"" & fileName & "\", \"parents\": [\"" & subtitleFolderId & "\"]}"
+                   set sessionCmd to "curl -s -X POST 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true' " & ¬
+                       "-H 'Authorization: Bearer " & accessToken & "' " & ¬
+                       "-H 'Content-Type: application/json' " & ¬
+                       "--data '" & createFileBody & "' " & ¬
+                       "-D - " & ¬
+                       "| grep -i 'Location: ' | cut -d' ' -f2- | tr -d '\\r'"
+                   
+                   set uploadUrl to do shell script sessionCmd
+                   if uploadUrl is not "" then
+                       try
+                           do shell script "curl -s -X PUT '" & uploadUrl & "' -H 'Authorization: Bearer " & accessToken & "' --data-binary '@" & filePath & "'"
+                           my writeLog("SUCCESS", "已上傳字幕檔：" & fileName)
+                       on error errMsg
+                           my writeLog("ERROR", "字幕檔上傳失敗：" & fileName & " - " & errMsg)
+                       end try
+                   end if
+                end repeat
+
                 -- 整個檔案處理完成
                 set processEndTime to current date
                 set processDuration to (processEndTime - processStartTime)
