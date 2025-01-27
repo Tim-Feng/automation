@@ -112,6 +112,47 @@ on run {input, parameters}
                 my writeLog("SUCCESS", "成功複製並重命名字幕檔：" & subtitleID)
                 display notification "檔案複製成功：" & subtitleID with title "字幕處理"
     
+                # 生成 VTT 格式
+                if subtitleID contains "+" then
+                    set videoIDs to do shell script "echo " & quoted form of subtitleID & " | tr '+' ' '"
+                    my writeLog("INFO", "處理多影片字幕：" & videoIDs)
+                else if subtitleID contains "-" then
+                    set dashPos to offset of "-" in subtitleID
+                    set startID to text 1 thru (dashPos - 1) of subtitleID
+                    set endID to text (dashPos + 1) through -1 of subtitleID
+                    
+                    try
+                        set startIDNum to startID as number
+                        set endIDNum to endID as number
+                    on error
+                        my writeLog("ERROR", "無效的影片 ID 範圍：" & subtitleID)
+                        return
+                    end try
+                    
+                    set idList to ""
+                    repeat with i from startID to endID
+                        set idList to idList & " " & i
+                    end repeat
+                    set videoIDs to text 2 thru -1 of idList
+                    my writeLog("INFO", "處理範圍字幕：" & videoIDs)
+                else
+                    set videoIDs to subtitleID
+                end if
+
+                set getDurationsCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 /Users/Mac/GitHub/automation/scripts/google_sheets.py --get-durations " & videoIDs
+                try 
+                    my writeLog("INFO", "開始獲取影片時長...")
+                    set durations to do shell script getDurationsCmd
+                    my writeLog("INFO", "獲取時長成功：" & durations)
+                    
+                    set splitCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 /Users/Mac/GitHub/automation/scripts/subtitle_splitter.py " & quoted form of newSrtPath & " " & quoted form of targetFolderPath & " " & durations
+                    my writeLog("INFO", "執行字幕拆分指令...")
+                    do shell script splitCmd
+                    my writeLog("SUCCESS", "VTT 格式轉換完成：" & subtitleID)
+                on error errMsg
+                    my writeLog("ERROR", "VTT 格式轉換失敗：" & errMsg)
+                end try
+
             on error errMsg
                 my writeLog("ERROR", "複製檔案失敗：" & errMsg)
                 display notification "複製失敗：" & subtitleID with title "字幕處理"

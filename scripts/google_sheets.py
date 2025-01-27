@@ -59,6 +59,20 @@ def get_column_value(sheet, column: str, video_id: str) -> str:
         logger.error(f"讀取欄位 {column} 失敗: {str(e)}")
         return ""
 
+def get_durations(video_ids: List[str]) -> str:
+    """取得多個影片的時長（僅回傳除了最後一個以外的時長）"""
+    sheet = setup_google_sheets()
+    durations = []
+    
+    # 取得除了最後一個以外的時長
+    for video_id in video_ids[:-1]:
+        duration_str = get_column_value(sheet, 'E', video_id)
+        if duration_str:
+            minutes, seconds = map(int, duration_str.split(':'))
+            durations.append(str(minutes * 60 + seconds))
+    
+    return ' '.join(durations)
+
 def batch_update(sheet, updates: List[Dict[str, Any]]) -> None:
     """批量更新表格
     Args:
@@ -102,6 +116,8 @@ def main():
                       help='取得下一個可用的 ID')
     parser.add_argument('--get-pending', action='store_true',
                       help='取得待處理的任務')
+    parser.add_argument('--get-durations', nargs='+',
+                      help='取得多個影片的時長')
     args = parser.parse_args()
     
     dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config', '.env')
@@ -118,6 +134,8 @@ def main():
     elif args.get_pending:
         tasks = get_pending_tasks(sheet)
         print(tasks)
+    elif args.get_durations:
+        print(get_durations(args.get_durations))
 
 if __name__ == "__main__":
     main()
