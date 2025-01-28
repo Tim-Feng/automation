@@ -1,13 +1,12 @@
 import os
 import yt_dlp
 from dotenv import load_dotenv
-import requests
-from requests.auth import HTTPBasicAuth
-from typing import Optional, Dict, List
+from typing import Optional, Dict
 import time
 import glob
 from logger import setup_logger
 from google_sheets import setup_google_sheets, get_next_id, batch_update
+from wordpress import WordPressAPI  # 引入新的 WordPress 模組
 
 logger = setup_logger('content_automation')
 
@@ -23,63 +22,6 @@ format_strategies = [
         'postprocessor_args': ['-c:v', 'libx264', '-crf', '23']
     }
 ]
-
-class WordPressAPI:
-    def __init__(self):
-        """初始化 WordPress API 客戶端"""
-        self.site_url = os.getenv("WP_SITE_URL").rstrip('/')
-        self.api_base = f"{self.site_url}/wp-json/wp/v2"
-        self.auth = HTTPBasicAuth(
-            os.getenv("WP_USERNAME"),
-            os.getenv("WP_APP_PASSWORD")
-        )
-        
-    def create_draft(
-        self,
-        title: str,
-        content: str,
-        video_url: str,
-        video_length: str = "",
-        video_tag: Optional[List[int]] = None,
-    ) -> Dict:
-        """建立影片草稿"""
-        endpoint = f"{self.api_base}/video"
-        
-        # 使用 Gutenberg blocks 格式的內容
-        formatted_content = f"""<!-- wp:paragraph -->
-<p>{content}</p>
-<!-- /wp:paragraph -->"""
-        
-        # 準備主要資料
-        data = {
-            "title": title,
-            "content": formatted_content,
-            "status": "draft",
-            "comment_status": "closed",
-            "ping_status": "closed",
-            # 使用 meta 欄位設定影片資訊
-            "meta": {
-                "video_url": video_url,
-                "length": video_length,
-                "_length": video_length,
-                "video_length": video_length
-            }
-        }
-        
-        # 加入影片標籤
-        if video_tag:
-            data["video_tag"] = video_tag
-            
-        response = requests.post(
-            endpoint,
-            auth=self.auth,
-            json=data
-        )
-        
-        if response.status_code != 201:
-            raise Exception(f"建立草稿失敗: {response.text}")
-        
-        return response.json()
 
 def get_video_metadata(youtube_url, max_retries=3):
     """使用 yt_dlp 擷取影片標題和時長"""
@@ -206,7 +148,7 @@ def download_and_convert(youtube_url, video_id, download_dir):
         logger.error(f"下載過程發生錯誤: {str(e)}")
         raise
 
-def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, download_dir):
+def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, download_dir, wp):
     """處理單筆資料"""
     try:
         # 1) 下載 & re-encode
@@ -228,12 +170,8 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
         # 4) 如果啟用 WordPress，建立草稿
         if ENABLE_WORDPRESS:
             try:
-                wp = WordPressAPI()
-                
-                # 建立影片草稿
+                # 使用新的 WordPress API
                 draft_content = f"這是 {title} 的介紹影片。"
-                
-                # 只加入 "featured" 標籤
                 featured_tag = [136]  # "featured" 標籤的 ID
                 
                 result = wp.create_draft(
@@ -251,8 +189,6 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                     'values': [[draft_link]]
                 })
                 
-                logger.info(f"WordPress 草稿建立成功: {draft_link}")
-                
             except Exception as wp_error:
                 logger.error(f"WordPress 錯誤: {wp_error}")
                 updates.append({
@@ -263,7 +199,7 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                     'range': f'J{row_index}',
                     'values': [['error']]
                 })
-                raise  # 向上拋出錯誤
+                raise
 
         # 5) 全部成功才更新狀態為 done
         updates.append({
@@ -293,6 +229,9 @@ def check_pending_and_process(sheet):
     fail_count = 0
 
     logger.info(f"開始掃描資料，共 {len(all_values)-2} 筆資料可供檢查")
+    
+    # 初始化 WordPress API
+    wp = WordPressAPI(logger) if ENABLE_WORDPRESS else None
 
     for i, row in enumerate(all_values, start=1):
         if i <= 2:  # 跳過前兩列
@@ -314,13 +253,13 @@ def check_pending_and_process(sheet):
             updates.append({'range': f'J{i}', 'values': [['pending']]})
 
             try:
-                process_one_row(i, youtube_url, assigned_id, sheet, updates, download_dir)
+                process_one_row(i, youtube_url, assigned_id, sheet, updates, download_dir, wp)
                 success_count += 1
             except:
                 fail_count += 1
 
     if updates:
-        batch_update(sheet, updates)  # 改用導入的函數
+        batch_update(sheet, updates)
         logger.info(f"已批量更新 {len(updates)} 個儲存格")
     else:
         logger.info("沒有符合條件的列可處理")
