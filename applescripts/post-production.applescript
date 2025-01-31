@@ -39,6 +39,31 @@ on writeLog(level, message)
     end try
 end writeLog
 
+on moveFolder(folderName)
+    try
+        set sourcePath to "/Users/Mac/Desktop/Video Production/2. To be Translated/" & folderName
+        set targetPath to "/Users/Mac/Desktop/Video Production/1. In Progress/" & folderName
+        
+        -- 檢查來源資料夾是否存在
+        if not (do shell script "[ -d " & quoted form of sourcePath & " ] && echo 'yes' || echo 'no'") is "yes" then
+            error "來源資料夾不存在：" & folderName
+        end if
+        
+        -- 檢查目標資料夾是否已存在
+        if (do shell script "[ -d " & quoted form of targetPath & " ] && echo 'yes' || echo 'no'") is "yes" then
+            error "目標資料夾已存在：" & folderName
+        end if
+        
+        -- 移動資料夾
+        do shell script "mv " & quoted form of sourcePath & " " & quoted form of targetPath
+        my writeLog("SUCCESS", "資料夾移動完成：" & folderName)
+        return true
+    on error errMsg
+        my writeLog("ERROR", "移動資料夾失敗：" & errMsg)
+        return false
+    end try
+end moveFolder
+
 on joinList(theList)
     set AppleScript's text item delimiters to ", "
     set theString to theList as string
@@ -502,6 +527,16 @@ on run {input, parameters}
                        end try
                    end if
                 end repeat
+
+                -- 移動資料夾到 In Progress
+                my writeLog("INFO", "開始移動資料夾到 In Progress...")
+                if my moveFolder(subtitleID) then
+                    my writeLog("SUCCESS", "資料夾已移動到 In Progress：" & subtitleID)
+                    display notification "資料夾已移動到 In Progress" with title "處理完成"
+                else
+                    my writeLog("ERROR", "無法移動資料夾到 In Progress：" & subtitleID)
+                    display notification "無法移動資料夾" with title "錯誤"
+                end if
 
                 -- 整個檔案處理完成
                 set processEndTime to current date
