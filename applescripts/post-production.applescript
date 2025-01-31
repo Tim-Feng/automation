@@ -100,66 +100,142 @@ on run {input, parameters}
         if (do shell script "[ -d " & quoted form of targetFolderPath & " ] && echo 'yes' || echo 'no'") is "yes" then
             my writeLog("INFO", "找到對應資料夾：" & subtitleID)
             
-            -- 複製並重命名字幕檔
-            set shouldContinue to true
-            try
-                set newSrtPath to targetFolderPath & "/" & subtitleID & "-zh.srt"
-                
-                -- 執行字幕格式化
-                set formatCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 /Users/Mac/GitHub/automation/scripts/add_spaces.py " & quoted form of subtitlePath & " " & quoted form of newSrtPath
-                do shell script formatCmd
-                
-                my writeLog("SUCCESS", "成功複製並重命名字幕檔：" & subtitleID)
-                display notification "檔案複製成功：" & subtitleID with title "字幕處理"
-    
-                # 生成 VTT 格式
-                if subtitleID contains "+" then
-                    set videoIDs to do shell script "echo " & quoted form of subtitleID & " | tr '+' ' '"
-                    my writeLog("INFO", "處理多影片字幕：" & videoIDs)
-                else if subtitleID contains "-" then
-                    set dashPos to offset of "-" in subtitleID
-                    set startID to text 1 thru (dashPos - 1) of subtitleID
-                    set endID to text (dashPos + 1) through -1 of subtitleID
-                    
-                    try
-                        set startIDNum to startID as number
-                        set endIDNum to endID as number
-                    on error
-                        my writeLog("ERROR", "無效的影片 ID 範圍：" & subtitleID)
-                        return
-                    end try
-                    
-                    set idList to ""
-                    repeat with i from startID to endID
-                        set idList to idList & " " & i
-                    end repeat
-                    set videoIDs to text 2 thru -1 of idList
-                    my writeLog("INFO", "處理範圍字幕：" & videoIDs)
-                else
-                    set videoIDs to subtitleID
-                end if
+        -- 複製並重命名字幕檔
+        set shouldContinue to true
+        try
+            set newSrtPath to targetFolderPath & "/" & subtitleID & "-zh.srt"
+            
+            -- 執行字幕格式化
+            set formatCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 /Users/Mac/GitHub/automation/scripts/add_spaces.py " & quoted form of subtitlePath & " " & quoted form of newSrtPath
+            do shell script formatCmd
+            
+            my writeLog("SUCCESS", "成功複製並重命名字幕檔：" & subtitleID)
+            display notification "檔案複製成功：" & subtitleID with title "字幕處理"
 
-                set getDurationsCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 /Users/Mac/GitHub/automation/scripts/google_sheets.py --get-durations " & videoIDs
-                try 
-                    my writeLog("INFO", "開始獲取影片時長...")
+            # 生成 VTT 格式並上傳
+            if subtitleID contains "+" then
+                set videoIDs to do shell script "echo " & quoted form of subtitleID & " | sed 's/-zh//' | tr '+' ' '"
+                my writeLog("INFO", "處理多影片字幕：" & videoIDs)
+                
+                try
+                    # 直接獲取時長列表
+                    set getDurationsCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 /Users/Mac/GitHub/automation/scripts/google_sheets.py --get-durations " & videoIDs
+                    my writeLog("DEBUG", "執行時長獲取命令：" & getDurationsCmd)
                     set durations to do shell script getDurationsCmd
-                    my writeLog("INFO", "獲取時長成功：" & durations)
+                    my writeLog("DEBUG", "獲取到的時長列表：" & durations)
                     
+                    if durations is "" then
+                        error "無法獲取時長列表"
+                    end if
+                    
+                    # 執行 VTT 轉換
                     set splitCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 /Users/Mac/GitHub/automation/scripts/subtitle_splitter.py " & quoted form of newSrtPath & " " & quoted form of targetFolderPath & " " & durations
-                    my writeLog("INFO", "執行字幕拆分指令...")
+                    my writeLog("DEBUG", "執行分割命令：" & splitCmd)
                     do shell script splitCmd
-                    my writeLog("SUCCESS", "VTT 格式轉換完成：" & subtitleID)
+                    
+                    # WordPress 上傳部分
+                    my writeLog("INFO", "開始上傳字幕到 WordPress...")
+                    set videoIDList to words of videoIDs
+                    repeat with currentID in videoIDList
+                        my writeLog("DEBUG", "處理 ID：" & currentID)
+                        set uploadCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 /Users/Mac/GitHub/automation/scripts/upload_vtt.py " & quoted form of targetFolderPath & " " & currentID
+                        my writeLog("DEBUG", "執行上傳命令：" & uploadCmd)
+                        try
+                            do shell script uploadCmd
+                            my writeLog("SUCCESS", "WordPress 字幕上傳完成：" & currentID)
+                        on error errMsg
+                            my writeLog("ERROR", "WordPress 字幕上傳失敗：" & errMsg)
+                        end try
+                    end repeat
+                    
                 on error errMsg
-                    my writeLog("ERROR", "VTT 格式轉換失敗：" & errMsg)
+                    my writeLog("ERROR", "字幕處理失敗：" & errMsg)
+                    display notification "字幕處理失敗：" & subtitleID with title "字幕處理"
+                    set end of subtitleConversionFailList to subtitleID
+                    set subtitleConversionFailCount to subtitleConversionFailCount + 1
+                    error errMsg
                 end try
+            else if subtitleID contains "-" then
+                # 處理範圍格式 (例如：5413-5415)
+                set dashPos to offset of "-" in subtitleID
+                set startID to text 1 thru (dashPos - 1) of subtitleID
+                set endID to text (dashPos + 1) through -1 of subtitleID
+                
+                # 去除 "-zh" 後綴（如果有的話）
+                if endID ends with "-zh" then
+                    set endID to text 1 thru ((length of endID) - 3) of endID
+                end if
+                
+                # 生成 ID 序列並設定 videoIDs
+                set idSequence to ""
+                repeat with i from startID to endID
+                    set idSequence to idSequence & " " & i
+                end repeat
+                set videoIDs to text 2 thru -1 of idSequence  # 移除開頭的空格
+                my writeLog("INFO", "處理範圍字幕：" & videoIDs)
+                
+                try
+                    # 直接獲取時長列表
+                    set getDurationsCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 /Users/Mac/GitHub/automation/scripts/google_sheets.py --get-durations " & videoIDs
+                    my writeLog("DEBUG", "執行時長獲取命令：" & getDurationsCmd)
+                    set durations to do shell script getDurationsCmd
+                    my writeLog("DEBUG", "獲取到的時長列表：" & durations)
+                    
+                    if durations is "" then
+                        error "無法獲取時長列表"
+                    end if
+                    
+                    # 執行 VTT 轉換
+                    set splitCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 /Users/Mac/GitHub/automation/scripts/subtitle_splitter.py " & quoted form of newSrtPath & " " & quoted form of targetFolderPath & " " & durations
+                    my writeLog("DEBUG", "執行分割命令：" & splitCmd)
+                    do shell script splitCmd
+                    
+                    # WordPress 上傳部分
+                    my writeLog("INFO", "開始上傳字幕到 WordPress...")
+                    set videoIDList to words of videoIDs
+                    repeat with currentID in videoIDList
+                        my writeLog("DEBUG", "處理 ID：" & currentID)
+                        set uploadCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 /Users/Mac/GitHub/automation/scripts/upload_vtt.py " & quoted form of targetFolderPath & " " & currentID
+                        my writeLog("DEBUG", "執行上傳命令：" & uploadCmd)
+                        try
+                            do shell script uploadCmd
+                            my writeLog("SUCCESS", "WordPress 字幕上傳完成：" & currentID)
+                        on error errMsg
+                            my writeLog("ERROR", "WordPress 字幕上傳失敗：" & errMsg)
+                        end try
+                    end repeat
+                    
+                on error errMsg
+                    my writeLog("ERROR", "字幕處理失敗：" & errMsg)
+                    display notification "字幕處理失敗：" & subtitleID with title "字幕處理"
+                    set end of subtitleConversionFailList to subtitleID
+                    set subtitleConversionFailCount to subtitleConversionFailCount + 1
+                    error errMsg
+                end try
+            else
+                # 單個影片的 VTT 轉換
+                set splitCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 /Users/Mac/GitHub/automation/scripts/subtitle_splitter.py " & quoted form of newSrtPath & " " & quoted form of targetFolderPath
+                my writeLog("DEBUG", "執行單影片轉換命令：" & splitCmd)
+                do shell script splitCmd
+                
+                # 單個影片的 WordPress 上傳
+                my writeLog("INFO", "開始上傳字幕到 WordPress...")
+                set uploadCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 /Users/Mac/GitHub/automation/scripts/upload_vtt.py " & quoted form of targetFolderPath & " " & do shell script "echo " & quoted form of subtitleID & " | sed 's/-zh//'"
+                try
+                    do shell script uploadCmd
+                    my writeLog("SUCCESS", "WordPress 字幕上傳完成：" & subtitleID)
+                on error errMsg
+                    my writeLog("ERROR", "WordPress 字幕上傳失敗：" & errMsg)
+                end try
+            end if
 
-            on error errMsg
-                my writeLog("ERROR", "複製檔案失敗：" & errMsg)
-                display notification "複製失敗：" & subtitleID with title "字幕處理"
-                set end of subtitleConversionFailList to subtitleID
-                set subtitleConversionFailCount to subtitleConversionFailCount + 1
-                set shouldContinue to false
-            end try        
+        on error errMsg
+            my writeLog("ERROR", "複製檔案失敗：" & errMsg)
+            display notification "複製失敗：" & subtitleID with title "字幕處理"
+            set end of subtitleConversionFailList to subtitleID
+            set subtitleConversionFailCount to subtitleConversionFailCount + 1
+            set shouldContinue to false
+        end try
             --------------------------------------------------------
             -- (2) 執行 Python 腳本轉換字幕格式
             --------------------------------------------------------

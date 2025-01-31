@@ -59,22 +59,61 @@ def get_column_value(sheet, column: str, video_id: str) -> str:
         logger.error(f"讀取欄位 {column} 失敗: {str(e)}")
         return ""
 
-def get_durations(video_ids: List[str]) -> str:
-    """取得多個影片的時長（僅回傳除了最後一個以外的時長）"""
+def get_video_info(video_ids: List[str], convert_duration: bool = True) -> Dict[str, Dict[str, Any]]:
+    """取得多個影片的資訊"""
     sheet = setup_google_sheets()
+    info = {}
+    logger.info(f"Getting info for videos: {video_ids}")
+    
+    for video_id in video_ids:
+        duration = get_column_value(sheet, 'E', video_id)
+        wp_url = get_column_value(sheet, 'H', video_id)
+        logger.debug(f"Video {video_id} - Duration: {duration}, URL: {wp_url}")
+        
+        if duration or wp_url:
+            info[video_id] = {
+                'wordpress_url': wp_url
+            }
+            
+            # 處理時長格式
+            if duration:
+                try:
+                    if convert_duration:
+                        minutes, seconds = map(int, duration.split(':'))
+                        info[video_id]['duration'] = str(minutes * 60 + seconds)
+                    else:
+                        info[video_id]['duration'] = duration
+                    logger.debug(f"Processed duration for {video_id}: {info[video_id]['duration']}")
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"無法轉換時長格式 {duration}: {str(e)}")
+                    info[video_id]['duration'] = duration
+    
+    logger.info(f"Final video info: {info}")
+    return info
+
+def get_durations_for_split(video_info: Dict[str, Dict[str, Any]], video_ids: List[str]) -> str:
+    """從完整影片資訊中提取用於拆分的時長列表"""
+    logger.info(f"Getting durations for videos: {video_ids}")
+    logger.debug(f"Video info received: {video_info}")
+    
     durations = []
-    
-    # 取得除了最後一個以外的時長
+    # 只處理除了最後一個以外的影片
     for video_id in video_ids[:-1]:
-        duration_str = get_column_value(sheet, 'E', video_id)
-        if duration_str:
-            minutes, seconds = map(int, duration_str.split(':'))
-            durations.append(str(minutes * 60 + seconds))
+        logger.debug(f"Processing video ID: {video_id}")
+        if video_id in video_info and 'duration' in video_info[video_id]:
+            duration = video_info[video_id]['duration']
+            logger.debug(f"Found duration for {video_id}: {duration}")
+            durations.append(video_info[video_id]['duration'])
+        else:
+            logger.warning(f"Missing duration for video {video_id}")
     
-    return ' '.join(durations)
+    result = ' '.join(durations)
+    logger.info(f"Final durations string: {result}")
+    return result
 
 def batch_update(sheet, updates: List[Dict[str, Any]]) -> None:
     """批量更新表格
+    
     Args:
         sheet: Google Sheet worksheet
         updates: [{'range': 'A1', 'values': [['value']]}]
@@ -86,56 +125,51 @@ def batch_update(sheet, updates: List[Dict[str, Any]]) -> None:
         logger.error(f"批量更新失敗: {str(e)}")
         raise
 
-def get_pending_tasks(sheet) -> List[Dict[str, Any]]:
-    """取得待處理的任務"""
-    all_values = sheet.get_all_values()
-    tasks = []
-    
-    for i, row in enumerate(all_values[2:], start=3):  # 跳過標題列
-        if len(row) < 10:
-            continue
-            
-        video_id = row[0].strip()
-        youtube_url = row[3].strip()  # D欄
-        status = row[9].strip().lower()  # J欄
-        
-        if youtube_url and not video_id and status != 'done':
-            tasks.append({
-                'row': i,
-                'youtube_url': youtube_url
-            })
-            
-    return tasks
-
 def main():
+    import json
     parser = argparse.ArgumentParser(description='Google Sheets 操作工具')
     parser.add_argument('--get-value', nargs=2, 
                       metavar=('COLUMN', 'VIDEO_ID'),
                       help='取得指定欄位的值')
     parser.add_argument('--get-next-id', action='store_true',
                       help='取得下一個可用的 ID')
-    parser.add_argument('--get-pending', action='store_true',
-                      help='取得待處理的任務')
+    parser.add_argument('--get-info', nargs='+',
+                      help='取得多個影片的資訊')
     parser.add_argument('--get-durations', nargs='+',
-                      help='取得多個影片的時長')
+                      help='Get durations for videos')
     args = parser.parse_args()
     
     dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config', '.env')
     load_dotenv(dotenv_path)
-    sheet = setup_google_sheets()
     
-    if args.get_value:
-        column, video_id = args.get_value
-        value = get_column_value(sheet, column, video_id)
-        print(value)
-    elif args.get_next_id:
-        next_id = get_next_id(sheet)
-        print(next_id)
-    elif args.get_pending:
-        tasks = get_pending_tasks(sheet)
-        print(tasks)
-    elif args.get_durations:
-        print(get_durations(args.get_durations))
+    try:
+        if args.get_durations:
+            logger.info(f"Processing --get-durations with args: {args.get_durations}")
+            video_info = get_video_info(args.get_durations)
+            logger.debug(f"Retrieved video info: {video_info}")
+            durations = get_durations_for_split(video_info, args.get_durations)
+            logger.debug(f"Calculated durations: {durations}")
+            print(durations)  # 輸出空格分隔的時長列表
+            
+        elif args.get_info:
+            logger.info(f"Processing --get-info with args: {args.get_info}")
+            video_info = get_video_info(args.get_info)
+            print(json.dumps(video_info))
+            
+        elif args.get_value:
+            column, video_id = args.get_value
+            sheet = setup_google_sheets()
+            value = get_column_value(sheet, column, video_id)
+            print(value)
+            
+        elif args.get_next_id:
+            sheet = setup_google_sheets()
+            next_id = get_next_id(sheet)
+            print(next_id)
+            
+    except Exception as e:
+        logger.error(f"執行失敗: {str(e)}")
+        raise  # 讓錯誤繼續往上傳遞，以便 AppleScript 能捕獲它
 
 if __name__ == "__main__":
     main()

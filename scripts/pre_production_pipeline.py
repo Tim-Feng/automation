@@ -6,7 +6,7 @@ import time
 import glob
 from logger import setup_logger
 from google_sheets import setup_google_sheets, get_next_id, batch_update
-from wordpress import WordPressAPI  # 引入新的 WordPress 模組
+from wordpress_api import WordPressAPI  # 改用新的模組名稱
 
 logger = setup_logger('content_automation')
 
