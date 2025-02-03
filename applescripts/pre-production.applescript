@@ -16,6 +16,25 @@ on writeLog(level, message)
     do shell script "echo '" & dateStr & " " & levelIcon & " [" & level & "] " & message & "' >> " & quoted form of logPath
 end writeLog
 
+-- Helper function for face detection and cover generation
+on generateCoverImage(videoPath, outputDir)
+    try
+        my writeLog("INFO", "開始進行封面生成：" & videoPath)
+        
+        set pythonCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3"
+        set scriptPath to "/Users/Mac/GitHub/automation/scripts/face_center_crop.py"
+        
+        set shellCommand to pythonCmd & " " & quoted form of scriptPath & " " & quoted form of videoPath & " -o " & quoted form of outputDir
+        
+        set coverPath to do shell script shellCommand
+        my writeLog("SUCCESS", "封面生成完成：" & coverPath)
+        return coverPath
+    on error errMsg
+        my writeLog("ERROR", "封面生成失敗：" & errMsg)
+        error "封面生成失敗：" & errMsg
+    end try
+end generateCoverImage
+
 on run {input, parameters}
     -- 獲取環境變數
     set envPath to "/Users/Mac/Library/Mobile Documents/com~apple~Automator/Documents/.env"
@@ -28,7 +47,6 @@ on run {input, parameters}
     set trelloListID to my getEnvValue(envPath, "TRELLO_LIST_ID")
     set templateCardID to my getEnvValue(envPath, "TEMPLATE_CARD_ID")
     
-    -- 寫入初始化日誌
     my writeLog("INFO", "開始處理影片，共 " & (count of input) & " 支影片")
     
     -- 循環處理每支影片
@@ -38,8 +56,7 @@ on run {input, parameters}
             set movieFilePath to POSIX path of movieFile
             set fileName to do shell script "basename " & quoted form of movieFilePath
             set fileBaseName to do shell script "basename " & quoted form of movieFilePath & " | sed 's/\\.[^.]*$//'"
-
-            -- 寫入轉檔日誌
+            
             my writeLog("INFO", "開始處理影片：" & fileName)
             
             -- 創建輸出目錄和子資料夾
@@ -47,10 +64,18 @@ on run {input, parameters}
             set trimmedName to fileBaseName
             set subDirectory to outputDirectory & "/" & trimmedName
             do shell script "mkdir -p " & quoted form of subDirectory
-
+            
+            -- 生成封面圖片
+            try
+                set coverPath to my generateCoverImage(movieFilePath, subDirectory)
+                my writeLog("SUCCESS", "封面圖片已生成：" & coverPath)
+            on error errMsg
+                my writeLog("ERROR", "生成封面圖片失敗：" & errMsg)
+            end try
+            
             -- 更新輸出檔案路徑到子資料夾中
             set outputFilePath to subDirectory & "/" & trimmedName & "-1920*1340.mp4"
-
+            
             -- 轉檔（加黑色方塊）
             try
                 -- 構建 FFmpeg 命令
@@ -75,35 +100,35 @@ on run {input, parameters}
                 my writeLog("ERROR", "FFmpeg 轉檔失敗：" & errMsg)
                 error "FFmpeg 轉檔失敗，中止處理"
             end try
-
+            
             -- 創建 Google Drive 資料夾（主資料夾）
             set driveFolderID to my createGoogleDriveFolder(fileBaseName, parentID, refreshToken, clientId, clientSecret)
-
+            
             -- 使用新的函數創建子資料夾
             set folderIDs to my createSubFolders(driveFolderID, refreshToken, clientId, clientSecret)
-
+            
             -- 使用新的方式獲取資料夾 ID
             set originalFolderID to my getFolderID(folderIDs, "原始影片")
             set embeddedFolderID to my getFolderID(folderIDs, "嵌入影片")
-
+            
             -- 複製原始影片到 Google Drive 的「原始影片」資料夾
             my uploadToGoogleDrive(movieFilePath, fileName, originalFolderID, refreshToken, clientId, clientSecret)
-
+            
             -- 複製轉檔影片到 Google Drive 的「嵌入影片」資料夾
             my uploadToGoogleDrive(outputFilePath, trimmedName & "-1920x1340.mp4", embeddedFolderID, refreshToken, clientId, clientSecret)
-
+            
             -- 創建 Trello 卡片
             my createTrelloCard(fileBaseName, trelloAPIKey, trelloToken, trelloListID, templateCardID)
-
+            
             my writeLog("SUCCESS", "影片處理完成：" & fileName)
-
+            
         on error errMsg
             my writeLog("ERROR", "處理影片 " & fileName & " 時發生錯誤：" & errMsg)
         end try
     end repeat
     
-    -- 完成處理日誌
     my writeLog("INFO", "所有影片處理完成")
+    return input
 end run
 
 -- Helper 函數：取得環境變數值
