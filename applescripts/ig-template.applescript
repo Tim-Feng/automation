@@ -435,87 +435,27 @@ on run {input, parameters}
                     error "影片導出失敗"
                 end try
 
-                -- 導出第二張投影片為圖片
-                my writeLog("INFO", "開始導出圖片")
+                -- 用 Python 產生封面
+
+                my writeLog("INFO", "開始以 Python 腳本產生封面圖")
                 try
-                    tell application "Keynote"
-                        tell thisDocument
-                            set current slide to slide 2
-                            delay 2
-                            
-                            -- 導出圖片
-                            tell application "System Events"
-                                tell process "Keynote"
-                                -- 點擊 "File" 選單
-                                    click menu bar item "File" of menu bar 1
-                                    delay 2
-                                    
-                                    -- 點擊 "Export To"
-                                    click menu item "Export To" of menu 1 of menu bar item "File" of menu bar 1
-                                    delay 2
-                                    
-                                    -- 使用方向鍵下移動兩次到 "Movie..."
-                                    key code 125 -- 方向鍵下
-                                    delay 0.5
-                                    key code 125 -- 方向鍵下
-                                    delay 0.5
-                                    key code 125 -- 方向鍵下
-                                    delay 0.5
-                                    key code 125 -- 方向鍵下
-                                    delay 0.5
-
-                                    -- 按下回車以選擇 "Images..."
-                                    key code 36 -- 按下 Enter 鍵
-                                    delay 3
-                                    
-                                    -- 設置導出選項
-                                    -- 先點擊 "From" radio button
-                                    click radio button "From:" of sheet 1 of window "影片模板 1920*3414.key"
-                                    delay 0.5
-
-                                    -- 按下 tab 移動到下一個輸入框
-                                    keystroke tab
-                                    delay 0.5
-                                    
-                                    -- 輸入第一個值
-                                    keystroke "2"
-                                    delay 0.5
-                                    
-                                    -- 按下 tab 移動到下一個輸入框
-                                    keystroke tab
-                                    delay 0.5
-                                    
-                                    -- 輸入第二個值
-                                    keystroke "2"
-                                    delay 0.5
-                                    
-                                    -- 按下保存按鈕
-                                    key code 36 -- 按下 Enter 鍵以確認保存
-                                    delay 3
-
-                                    -- 按下輸出按鈕
-                                    key code 36 -- 按下 Enter 鍵以確認輸出
-                                    delay 3
-
-                                    -- 處理可能出現的提示視窗
-                                    repeat 5 times
-                                        if exists sheet 1 of window "影片模板 1920*3414.key" then
-                                            if exists button "OK" of sheet 1 of window "影片模板 1920*3414.key" then
-                                                click button "OK" of sheet 1 of window "影片模板 1920*3414.key"
-                                                delay 1
-                                            end if
-                                        end if
-                                        delay 0.5
-                                    end repeat
-                                    delay 3
-                                end tell
-                            end tell
-                        end tell
-                    end tell
-                    my writeLog("SUCCESS", "圖片導出完成")
+                    set pythonPath to "/usr/local/bin/python3" -- 或 do shell script "which python3"
+                    set igCoverScriptPath to "/Users/Mac/GitHub/automation/scripts/ig_cover_generator.py"
+                    set movieDirectory to do shell script "dirname " & quoted form of movieFilePath
+                    
+                    set theCommand to quoted form of pythonPath & " " & quoted form of igCoverScriptPath & ¬
+                        " " & quoted form of movieID & ¬
+                        " " & quoted form of firstText & ¬
+                        " " & quoted form of secondText & ¬
+                        " " & quoted form of movieDirectory
+                    
+                    -- 執行該命令
+                    do shell script theCommand
+                    
+                    my writeLog("SUCCESS", "封面圖產生完成")
                 on error errMsg
-                    my writeLog("ERROR", "圖片導出失敗：" & errMsg)
-                    error "圖片導出失敗"
+                    my writeLog("ERROR", "封面圖產生失敗：" & errMsg)
+                    error "封面圖產生失敗"
                 end try
                 
                 -- 儲存並關閉 Keynote 文件
