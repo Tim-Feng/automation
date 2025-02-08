@@ -7,9 +7,9 @@ from pathlib import Path
 import argparse
 import sys
 
-from logger import setup_logger
+from logger import get_workflow_logger
 
-logger = setup_logger('smart_processor')
+logger = get_workflow_logger('2', 'smart_processor')  # Stage 2 因為這是影片處理階段
 
 class SmartImageProcessor:
     def __init__(self, target_width: int = 1920, target_height: int = 3414, content_height: int = 2404):
@@ -189,8 +189,6 @@ class SmartImageProcessor:
         return chosen
 
     def process_video(self, video_path: str, output_path: str = None):
-        logger.info(f"Processing video: {video_path}")
-        
         if not os.path.exists(video_path):
             logger.error("Video not found")
             return None
@@ -207,10 +205,9 @@ class SmartImageProcessor:
             return None
 
         try:
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             fps = int(cap.get(cv2.CAP_PROP_FPS))
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             duration = total_frames / fps
-            logger.info(f"Video info: {duration:.1f}s, FPS {fps}, total_frames={total_frames}")
 
             frame_interval = max(1, fps // 4)  # 4 frames/sec
             skip_end_sec = 3
@@ -275,7 +272,6 @@ class SmartImageProcessor:
                     processed = self._crop_and_resize(qframe, None)
                     out_path = f"{base_path}_noface_top{i}.jpg"
                     cv2.imwrite(out_path, processed)
-                    logger.info(f"Fallback saved: {out_path} (score={score:.1f}, time={fpos:.1f}s)")
                     saved_paths.append(out_path)
 
                 return saved_paths[0]  # 回傳第一張
@@ -287,7 +283,6 @@ class SmartImageProcessor:
                     final_img = self._crop_and_resize(frame_with_face, faces)
                     out_path = f"{base_path}_top{i}.jpg"
                     cv2.imwrite(out_path, final_img)
-                    logger.info(f"Face cover saved: {out_path} (score={score:.1f}, time={fpos:.1f}s)")
                     saved_paths.append(out_path)
 
                 return saved_paths[0]

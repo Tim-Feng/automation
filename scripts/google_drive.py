@@ -5,11 +5,11 @@ import argparse
 from typing import Optional, Dict, List
 from pathlib import Path
 import requests
-from logger import setup_logger
+from logger import get_workflow_logger
 from dotenv import load_dotenv
 import sys
 
-logger = setup_logger('google_drive')
+logger = get_workflow_logger('4', 'google_drive')  # Stage-4 因為這是最後的範本處理階段，主要用於上傳成品
 
 class GoogleDriveAPI:
     def __init__(self):
@@ -97,11 +97,58 @@ class GoogleDriveAPI:
             response.raise_for_status()
             
             folder_id = response.json()["id"]
-            logger.info(f"Created folder: {folder_name} with ID: {folder_id}")
             return folder_id
             
         except Exception as e:
             logger.error(f"Failed to create folder: {str(e)}")
+            raise
+
+    def create_google_docs(self, name: str, parent_id: str) -> str:
+        """創建 Google Docs
+        
+        Args:
+            name: 文件名稱
+            parent_id: 父資料夾 ID
+            
+        Returns:
+            str: 新建文件的 ID
+        """
+        try:
+            access_token = self.get_access_token()
+            drive_id = self.get_drive_id(parent_id, access_token)
+            
+            metadata = {
+                "name": name,
+                "mimeType": "application/vnd.google-apps.document",
+                "parents": [parent_id]
+            }
+            
+            if drive_id:
+                metadata["driveId"] = drive_id
+            
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+            
+            params = {
+                "supportsAllDrives": True,
+                "includeItemsFromAllDrives": True
+            }
+            
+            response = requests.post(
+                f"{self.base_url}/files",
+                params=params,
+                headers=headers,
+                json=metadata
+            )
+            response.raise_for_status()
+            
+            docs_id = response.json()["id"]
+            return docs_id
+            
+        except Exception as e:
+            logger.error(f"Failed to create Google Docs: {str(e)}")
             raise
 
     def get_drive_id(self, file_id: str, access_token: str) -> Optional[str]:
@@ -232,7 +279,6 @@ class GoogleDriveAPI:
                 upload_response.raise_for_status()
             
             file_id = upload_response.json()["id"]
-            logger.info(f"Uploaded file: {file_name} with ID: {file_id}")
             return file_id
             
         except Exception as e:
@@ -248,6 +294,9 @@ def main():
     parser.add_argument("--upload-file", nargs=3, 
                       metavar=("FILE_PATH", "FILE_NAME", "FOLDER_ID"),
                       help="Upload a file")
+    parser.add_argument("--create-docs", nargs=2,
+                      metavar=("NAME", "PARENT_ID"),
+                      help="Create a Google Docs in the specified folder")
     
     args = parser.parse_args()
     
@@ -271,6 +320,10 @@ def main():
                                       args.upload_file[1], 
                                       args.upload_file[2])
             print(file_id)
+            
+        elif args.create_docs:
+            docs_id = drive.create_google_docs(args.create_docs[0], args.create_docs[1])
+            print(docs_id)
             
     except Exception as e:
         logger.error(f"Operation failed: {str(e)}")

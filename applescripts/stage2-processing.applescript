@@ -1,19 +1,15 @@
 -- 定義寫入日誌的函數
 on writeLog(level, message)
-    set logPath to "/Users/Mac/Library/Logs/gdrive_upload.log"
-    set dateStr to do shell script "date '+%Y-%m-%d %H:%M:%S'"
+    set scriptPath to "/Users/Mac/GitHub/automation/scripts/log_bridge.py"
+    set stage to "2"
+    set component to "processing"
     
-    -- 根據等級設定圖示
-    set levelIcon to ""
-    if level is "INFO" then
-        set levelIcon to "ℹ️"
-    else if level is "ERROR" then
-        set levelIcon to "❌"
-    else if level is "SUCCESS" then
-        set levelIcon to "✓"
-    end if
-    
-    do shell script "echo '" & dateStr & " " & levelIcon & " [" & level & "] " & message & "' >> " & quoted form of logPath
+    try
+        do shell script "python3 " & quoted form of scriptPath & " " & stage & " " & level & " " & quoted form of message & " " & component
+    on error errMsg
+        -- 如果日誌記錄失敗，使用基本的 stderr 輸出
+        do shell script "echo 'Log Error: " & errMsg & "' >&2"
+    end try
 end writeLog
 
 -- Helper function for face detection and cover generation
@@ -126,6 +122,12 @@ on run {input, parameters}
             
             set driveFolderID to do shell script createFolderCommand
             
+            -- 在主資料夾中創建同名的 Google Docs
+            set createDocsCommand to quoted form of pythonPath & " " & quoted form of driveScriptPath & ¬
+                " --create-docs " & quoted form of fileBaseName & " " & quoted form of driveFolderID
+            
+            do shell script createDocsCommand
+            
             -- 初始化變數
             set originalFolderID to ""
             set embeddedFolderID to ""
@@ -169,7 +171,7 @@ on run {input, parameters}
                     " " & quoted form of originalFolderID
                 
                 do shell script uploadOriginalCommand
-                my writeLog("SUCCESS", "原始影片上傳完成")
+                
             on error errMsg
                 my writeLog("ERROR", "原始影片上傳失敗：" & errMsg)
                 error "原始影片上傳失敗：" & errMsg
@@ -187,11 +189,13 @@ on run {input, parameters}
                     " " & quoted form of embeddedFolderID
                 
                 do shell script uploadConvertedCommand
-                my writeLog("SUCCESS", "轉檔影片上傳完成")
+                
             on error errMsg
                 my writeLog("ERROR", "轉檔影片上傳失敗：" & errMsg)
                 error "轉檔影片上傳失敗：" & errMsg
             end try
+            
+            my writeLog("SUCCESS", "所有影片檔案上傳完成")
             
             -- 創建 Trello 卡片
             my createTrelloCard(fileBaseName, trelloAPIKey, trelloToken, trelloListID, templateCardID)
