@@ -1,19 +1,15 @@
 -- 日誌記錄函數
 on writeLog(level, message)
-    set logPath to "/Users/Mac/Library/Logs/content_pipeline.log"
-    set dateStr to do shell script "date '+%Y-%m-%d %H:%M:%S'"
+    set scriptPath to "/Users/Mac/GitHub/automation/scripts/log_bridge.py"
+    set stage to "1"
+    set component to "preparation"
     
-    -- 根據等級設定圖示
-    set levelIcon to ""
-    if level is "INFO" then
-        set levelIcon to "ℹ️"
-    else if level is "ERROR" then
-        set levelIcon to "❌"
-    else if level is "SUCCESS" then
-        set levelIcon to "✓"
-    end if
-    
-    do shell script "echo '" & dateStr & " " & levelIcon & " [" & level & "] " & message & "' >> " & quoted form of logPath
+    try
+        do shell script "python3 " & quoted form of scriptPath & " " & stage & " " & level & " " & quoted form of message & " " & component
+    on error errMsg
+        -- 如果日誌記錄失敗，使用基本的 stderr 輸出
+        do shell script "echo 'Log Error: " & errMsg & "' >&2"
+    end try
 end writeLog
 
 -- 檢查必要的環境變數
@@ -59,16 +55,9 @@ on run {input, parameters}
         set pythonPath to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3"
         set scriptPath to "/Users/Mac/GitHub/automation/scripts/pre_production_pipeline.py"
         
-        my writeLog("INFO", "準備執行 Python 腳本")
-        
         set shellCommand to quoted form of pythonPath & " " & quoted form of scriptPath
         
         set pipelineOutput to do shell script shellCommand
-        
-        -- 檢查是否有輸出（可能包含警告或資訊）
-        if pipelineOutput is not "" then
-            my writeLog("INFO", "Pipeline 輸出：" & pipelineOutput)
-        end if
         
         my writeLog("SUCCESS", "Pipeline 執行完成")
         

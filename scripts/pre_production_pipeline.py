@@ -4,11 +4,11 @@ from dotenv import load_dotenv
 from typing import Optional, Dict
 import time
 import glob
-from logger import setup_logger
+from logger import get_workflow_logger
 from google_sheets import setup_google_sheets, get_next_id, batch_update
-from wordpress_api import WordPressAPI  # 改用新的模組名稱
+from wordpress_api import WordPressAPI  
 
-logger = setup_logger('content_automation')
+logger = get_workflow_logger('1', 'content_automation')  
 
 # ========== 全域功能開關 ==========
 ENABLE_OPENAI = False     
@@ -207,8 +207,6 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
             'values': [['done']]
         })
 
-        logger.info(f"影片 ID {assigned_id} 已完成處理")
-
     except Exception as e:
         logger.error(f"處理影片 ID {assigned_id} 時發生錯誤: {e}")
         updates.append({
@@ -227,8 +225,6 @@ def check_pending_and_process(sheet):
     updates = []
     success_count = 0
     fail_count = 0
-
-    logger.info(f"開始掃描資料，共 {len(all_values)-2} 筆資料可供檢查")
     
     # 初始化 WordPress API
     wp = WordPressAPI(logger) if ENABLE_WORDPRESS else None
@@ -260,10 +256,7 @@ def check_pending_and_process(sheet):
 
     if updates:
         batch_update(sheet, updates)
-        logger.info(f"已批量更新 {len(updates)} 個儲存格")
-    else:
-        logger.info("沒有符合條件的列可處理")
-
+    
     logger.info(f"處理完成，成功 {success_count} 筆，失敗 {fail_count} 筆")
 
 def main():
