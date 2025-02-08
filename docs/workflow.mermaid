@@ -5,16 +5,20 @@ flowchart TB
         A2 --> A3[建立 WordPress 草稿]
         A -->|使用| AA[google_sheets.py]
         A -->|使用| AB[wordpress_api.py]
+        A -->|使用| AC[logger.py]
     end
 
     subgraph "2️⃣ 前製作業"
         B[pre-production.applescript] -->|人工決策| B1[決定單支/合併影片]
         B1 -->|自動化處理| B2[建立目錄結構]
         B2 --> B3[影片轉檔 1920*1340]
-        B3 --> B4[上傳至 Google Drive]
+        B3 --> B4[使用 google_drive.py 上傳至 Google Drive]
         B4 --> B5[複製至桌面資料夾]
         B5 --> B6[建立 Trello 任務]
         B -->|使用| BA[google_sheets.py]
+        B -->|使用| BB[face_center_crop.py]
+        B -->|使用| BC[logger.py]
+        B -->|使用| BD[google_drive.py]
     end
 
     subgraph "3️⃣ 後製處理"
@@ -30,12 +34,16 @@ flowchart TB
         C -->|使用| CB[srt_to_ass_with_style.py]
         C -->|使用| CC[subtitle_splitter.py]
         C -->|使用| CD[upload_vtt.py]
+        C -->|使用| CE[logger.py]
+        C -->|使用| CF[google_sheets.py]
     end
 
     subgraph "4️⃣ IG 模板套用"
         D[ig-template.applescript] -->|讀取資料| D1[從 Google Docs 讀取文案]
         D1 --> D2[套用 IG 模板]
         D2 --> D3[輸出成品]
+        D -->|使用| DA[ig_video_generator.py]
+        D -->|使用| DB[ig_cover_generator.py]
     end
 
     %% 主要流程連接
@@ -49,4 +57,4 @@ flowchart TB
     
     class A,B,C,D mainScript;
     class A1,A2,A3,B1,B2,B3,B4,B5,B6,C1,C2,C3,C4,C5,C6,C7,D1,D2,D3 subProcess;
-    class AA,AB,BA,CA,CB,CC,CD utility;
+    class AA,AB,AC,BA,BB,BC,BD,CA,CB,CC,CD,CE,CF,DA,DB utility;
