@@ -3,9 +3,9 @@ import sys
 import re
 from typing import List
 from datetime import timedelta
-from logger import setup_logger
+from logger import get_workflow_logger
 
-logger = setup_logger('subtitle_splitter')
+logger = get_workflow_logger('3', 'subtitle_splitter')  # Stage 3 因為這是字幕處理階段
 
 def parse_timestamp(timestamp: str) -> timedelta:
     """Parse SRT timestamp to timedelta"""
@@ -82,10 +82,6 @@ def split_subtitles(blocks: List[dict], durations: List[int]) -> List[List[dict]
     current_duration = timedelta(seconds=0)
     duration_index = 0
     total_duration = sum(durations)
-    
-    logger.info(f"Splitting subtitles with durations: {durations}")
-    logger.info(f"Total blocks: {len(blocks)}")
-    logger.info(f"Total duration: {total_duration} seconds")
     
     try:
         for block in blocks:
@@ -173,9 +169,7 @@ def main():
     filename = os.path.basename(input_file)
     video_ids = get_video_ids(filename)
     
-    logger.info(f"Processing file: {filename}")
-    logger.info(f"Video IDs: {video_ids}")
-    logger.info(f"Durations: {durations}")
+    logger.info(f"裁切 VTT： {filename}")
     
     if len(video_ids) > 1 and len(durations) != len(video_ids) - 1:
         logger.error(f'時長數量需要比影片數量少 1 (got {len(durations)} durations for {len(video_ids)} videos)')
@@ -189,16 +183,15 @@ def main():
         return
 
     blocks = parse_srt(content)
-    logger.info(f"Parsed {len(blocks)} subtitle blocks")
     
     if len(video_ids) == 1:
-        logger.info("Single video mode")
+        logger.info("單影片模式")
         os.makedirs(output_dir, exist_ok=True)
         output_path = os.path.join(output_dir, f"{video_ids[0]}-zh.vtt")
         write_vtt(blocks, output_path)
-        logger.info(f"Generated subtitle file: {output_path}")
+        logger.info(f"裁切完成： {filename}")
     else:
-        logger.info("Multiple video mode")
+        logger.info("多影片模式")
         split_blocks = split_subtitles(blocks, durations)
         if not split_blocks:
             logger.error("Failed to split subtitle blocks")
@@ -208,7 +201,7 @@ def main():
         for video_id, blocks in zip(video_ids, split_blocks):
             output_path = os.path.join(output_dir, f"{video_id}-zh.vtt")
             write_vtt(blocks, output_path)
-            logger.info(f"Generated subtitle file: {output_path}")
+        logger.info(f"裁切完成：{filename}")
 
 if __name__ == '__main__':
    main()

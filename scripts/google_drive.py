@@ -260,7 +260,8 @@ class GoogleDriveAPI:
             response.raise_for_status()
             
             # 獲取上傳 URL
-            upload_url = response.headers["Location"]
+            upload_url = response.headers.get('location')
+            logger.info("獲得上傳 URL")
             
             # 獲取檔案 MIME type
             file_extension = Path(file_path).suffix.lower()
@@ -279,6 +280,7 @@ class GoogleDriveAPI:
                 upload_response.raise_for_status()
             
             file_id = upload_response.json()["id"]
+            logger.info(f"字幕檔上傳成功：{os.path.basename(file_path).split('-')[0]}")
             return file_id
             
         except Exception as e:

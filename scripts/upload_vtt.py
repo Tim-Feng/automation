@@ -25,13 +25,11 @@ def get_post_id_from_sheets(video_id: str) -> int:
                 return None
                 
             wp_url = row[7].strip()
-            logger.info(f"找到 WordPress 連結: {wp_url}")
             
             # 從 URL 提取文章 ID
             match = re.search(r'[?&](?:post|p)=(\d+)', wp_url)
             if match:
                 post_id = match.group(1) or match.group(2)
-                logger.info(f"解析出文章 ID: {post_id}")
                 return int(post_id)
             else:
                 logger.error(f"無法從連結解析出文章 ID: {wp_url}")
@@ -45,17 +43,13 @@ def find_vtt_files(folder_path: str, video_id: str) -> list:
     vtt_files = []
     folder = Path(folder_path)
     
-    logger.info(f"搜尋資料夾: {folder}")
     pattern = f"{video_id}*.vtt"
-    logger.info(f"搜尋 pattern: {pattern}")
     
-    # 搜尋所有符合格式的 VTT 檔案
     for vtt_file in folder.glob(pattern):
-        logger.info(f"找到 VTT 檔案: {vtt_file}")
         vtt_files.append(str(vtt_file))
-    
+        
     if not vtt_files:
-        logger.error(f"在 {folder} 中找不到符合 {pattern} 的檔案")
+        logger.error(f"找不到符合的 VTT 檔案: {pattern}")
         
     return vtt_files
 
@@ -84,14 +78,9 @@ def main():
     folder_path = sys.argv[1]
     video_ids = sys.argv[2].split()  # 支援多個影片 ID
     
-    logger.info(f"處理資料夾: {folder_path}")
-    logger.info(f"處理影片 ID: {video_ids}")
-    
     wp = WordPressAPI(logger)
     
     for video_id in video_ids:
-        logger.info(f"開始處理影片 ID: {video_id}")
-        
         # 直接從 Google Sheets 取得 WordPress 文章 ID
         post_id = get_post_id_from_sheets(video_id)
         if not post_id:
@@ -107,17 +96,13 @@ def main():
             try:
                 # 從檔名判斷語系
                 lang = Path(vtt_file).stem.split('-')[-1]
-                logger.info(f"從檔名判斷語系: {lang}")
-                
-                # 開始上傳字幕
-                logger.info(f"開始上傳字幕: {Path(vtt_file).name}")
                 
                 # 上傳字幕檔案
                 upload_result = wp.upload_vtt(post_id, vtt_file)
                 if not upload_result:
                     continue
                 
-                logger.info(f"字幕上傳和設定完成")
+                # 移除重複的 log，因為 stage3-subtitling.applescript 已經有相同的 log
             except Exception as e:
                 logger.error(f"上傳字幕 {vtt_file} 失敗: {str(e)}")
 

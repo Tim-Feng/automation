@@ -34,14 +34,20 @@ class WorkflowLogger:
         logger = logging.getLogger('automation_workflow')
         logger.setLevel(logging.INFO)
         
+        # 檔案處理器
         log_file = Path.home() / "Library/Logs" / "automation_workflow.log"
-        handler = RotatingFileHandler(
+        file_handler = RotatingFileHandler(
             str(log_file),
             maxBytes=10*1024*1024,  # 10MB
             backupCount=10
         )
-        handler.setFormatter(WorkflowFormatter())
-        logger.addHandler(handler)
+        file_handler.setFormatter(WorkflowFormatter())
+        logger.addHandler(file_handler)
+        
+        # 控制台處理器
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(WorkflowFormatter())
+        logger.addHandler(console_handler)
         
         return logger
 

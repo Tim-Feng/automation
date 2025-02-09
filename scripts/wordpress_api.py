@@ -9,6 +9,7 @@ from typing import Optional, List, Dict, Union
 from pathlib import Path
 
 class WordPressAPI:
+
     def __init__(self, logger):
         """初始化 WordPress API 客戶端"""
         self.logger = logger
@@ -86,7 +87,6 @@ class WordPressAPI:
             
         try:
             # 上傳檔案
-            self.logger.info(f"開始上傳檔案到 {endpoint}")
             response = requests.post(
                 endpoint,
                 auth=self.auth,
@@ -95,13 +95,13 @@ class WordPressAPI:
             )
             
             if response.status_code not in (201, 200):
-                self.logger.error(f"上傳失敗 - Status: {response.status_code}, Response: {response.text}")
+                self.logger.error(f"文章 {post_id} 的檔案 {file_path.name} 上傳失敗 - Status: {response.status_code}, Response: {response.text}")
                 return None
                 
             return response.json()
             
         except Exception as e:
-            self.logger.error(f"上傳檔案失敗: {str(e)}")
+            self.logger.error(f"文章 {post_id} 的檔案 {file_path.name} 上傳時發生錯誤: {str(e)}")
             return None
             
     def upload_vtt(self, post_id: int, vtt_path: Union[str, Path]) -> Dict:
@@ -116,68 +116,46 @@ class WordPressAPI:
         """
         vtt_path = Path(vtt_path)
         if not vtt_path.exists():
-            raise FileNotFoundError(f"找不到字幕檔: {vtt_path}")
+            raise FileNotFoundError(f"找不到字幕檔案: {vtt_path}")
             
-        if vtt_path.suffix.lower() != '.vtt':
-            raise ValueError(f"不支援的檔案格式: {vtt_path.suffix}")
+        # 上傳字幕檔案
+        upload_result = self.upload_media(vtt_path, post_id)
+        if not upload_result:
+            return None
+            
+        # 從上傳結果中取得字幕 URL
+        subtitle_url = upload_result.get('source_url')
+        if not subtitle_url:
+            self.logger.error(f"文章 {post_id} 的字幕上傳成功，但無法取得字幕 URL")
+            return None
             
         # 從檔名判斷語系
-        lang_match = re.search(r'-([a-z]{2})(?:\.|$)', vtt_path.stem)
-        if not lang_match:
-            raise ValueError(f"無法從檔名判斷語系: {vtt_path.name}")
-            
-        language = lang_match.group(1)
-        self.logger.info(f"從檔名判斷語系: {language}")
+        lang = vtt_path.stem.split('-')[-1]
         
-        self.logger.info(f"開始上傳字幕: {vtt_path.name}")
-        
-        try:
-            # 1. 上傳字幕檔案
-            self.logger.info(f"開始上傳檔案到 {self.api_base}/media")
-            upload_result = self.upload_media(vtt_path, post_id)
-            if not upload_result:
-                raise Exception("上傳字幕檔案失敗")
-                
-            vtt_url = upload_result.get('source_url')
-            if not vtt_url:
-                raise Exception("無法取得字幕 URL")
-                
-            self.logger.info(f"字幕上傳成功: {vtt_url}")
-            
-            # 2. 更新文章的字幕設定
-            self.logger.info(f"更新文章 {post_id} 的字幕設定...")
-            update_endpoint = f"{self.api_base}/video/{post_id}"
-            
-            subtitle_data = {
-                'meta': {
-                    'text_tracks': {
-                        'languages': [language],
-                        'sources': [vtt_url],
-                        'action': ''
-                    }
+        # 更新文章的字幕設定
+        endpoint = f"{self.api_base}/video/{post_id}"
+        data = {
+            'meta': {
+                'text_tracks': {
+                    'languages': [lang],
+                    'sources': [subtitle_url],
+                    'action': ''
                 }
             }
+        }
+        
+        try:
+            response = requests.post(endpoint, auth=self.auth, json=data)
             
-            self.logger.info(f"發送字幕設定請求: {subtitle_data}")
-            update_response = requests.patch(
-                update_endpoint,
-                auth=self.auth,
-                json=subtitle_data
-            )
-            
-            if update_response.status_code not in (200, 201):
-                self.logger.error(f"設定字幕失敗 - Status: {update_response.status_code}, Response: {update_response.text}")
-                raise Exception(f"設定字幕失敗: {update_response.text}")
+            if response.status_code not in (200, 201):
+                self.logger.error(f"文章 {post_id} 的字幕設定更新失敗 - Status: {response.status_code}, Response: {response.text}")
+                return None
                 
-            update_result = update_response.json()
-            self.logger.info(f"字幕設定響應: {update_result}")
-            self.logger.info("文章字幕設定成功")
-            
-            return upload_result
+            return response.json()
             
         except Exception as e:
-            self.logger.error(f"上傳字幕時發生錯誤: {str(e)}")
-            raise
+            self.logger.error(f"文章 {post_id} 的字幕設定更新時發生錯誤: {str(e)}")
+            return None
             
     def get_post_id_by_title(self, title: str) -> Union[int, None]:
         """根據標題取得文章 ID"""

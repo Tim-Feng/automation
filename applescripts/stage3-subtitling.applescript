@@ -7,35 +7,17 @@
   - 用 display notification (或 display dialog) 簡單提示「開始轉檔」「轉檔完成」
 *)
 
+-- 日誌記錄函數
 on writeLog(level, message)
+    set scriptPath to "/Users/Mac/GitHub/automation/scripts/log_bridge.py"
+    set stage to "3"
+    set component to "subtitling"
+    
     try
-        -- 主要日誌位置
-        set mainLogPath to "/Users/Mac/Library/Logs/subtitle_processor.log"
-        
-        -- 確保主要日誌目錄存在
-        do shell script "mkdir -p /Users/Mac/Library/Logs"
-        
-        -- 創建符號連結（如果不存在）
-        set symLinkPath to "/Users/Mac/GitHub/automation/logs/subtitle_processor.log"
-        do shell script "mkdir -p /Users/Mac/GitHub/automation/logs"
-        do shell script "[ ! -L " & quoted form of symLinkPath & " ] && ln -s " & quoted form of mainLogPath & " " & quoted form of symLinkPath & " || true"
-        
-        -- 取得時間
-        set dateStr to do shell script "date '+%Y-%m-%d %H:%M:%S'"
-        
-        -- 寫入日誌
-        set logText to dateStr & " [" & level & "] " & message & "\n"
-        do shell script "/bin/echo '" & logText & "' >> " & quoted form of mainLogPath
-        
-        -- 如果是錯誤，顯示通知
-        if level is "ERROR" then
-            display notification message with title "錯誤"
-        end if
-        
-        return true
+        do shell script "python3 " & quoted form of scriptPath & " " & stage & " " & level & " " & quoted form of message & " " & component
     on error errMsg
-        display notification errMsg with title "日誌錯誤"
-        return false
+        -- 如果日誌記錄失敗，使用基本的 stderr 輸出
+        do shell script "echo 'Log Error: " & errMsg & "' >&2"
     end try
 end writeLog
 
@@ -134,7 +116,7 @@ on run {input, parameters}
             set formatCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 /Users/Mac/GitHub/automation/scripts/add_spaces.py " & quoted form of subtitlePath & " " & quoted form of newSrtPath
             do shell script formatCmd
             
-            my writeLog("SUCCESS", "成功複製並重命名字幕檔：" & subtitleID)
+            my writeLog("SUCCESS", "複製/命名成功：" & subtitleID)
             display notification "檔案複製成功：" & subtitleID with title "字幕處理"
 
             # 生成 VTT 格式並上傳
@@ -159,7 +141,7 @@ on run {input, parameters}
                     do shell script splitCmd
                     
                     # WordPress 上傳部分
-                    my writeLog("INFO", "開始上傳字幕到 WordPress...")
+                    my writeLog("INFO", "上傳 WP 字幕：" & subtitleID)
                     set videoIDList to words of videoIDs
                     repeat with currentID in videoIDList
                         my writeLog("DEBUG", "處理 ID：" & currentID)
@@ -167,9 +149,9 @@ on run {input, parameters}
                         my writeLog("DEBUG", "執行上傳命令：" & uploadCmd)
                         try
                             do shell script uploadCmd
-                            my writeLog("SUCCESS", "WordPress 字幕上傳完成：" & currentID)
+                            my writeLog("SUCCESS", "WP 字幕上傳完成：" & currentID)
                         on error errMsg
-                            my writeLog("ERROR", "WordPress 字幕上傳失敗：" & errMsg)
+                            my writeLog("ERROR", "WP 字幕上傳失敗：" & errMsg)
                         end try
                     end repeat
                     
@@ -216,7 +198,7 @@ on run {input, parameters}
                     do shell script splitCmd
                     
                     # WordPress 上傳部分
-                    my writeLog("INFO", "開始上傳字幕到 WordPress...")
+                    my writeLog("INFO", "上傳 WP 字幕：" & subtitleID)
                     set videoIDList to words of videoIDs
                     repeat with currentID in videoIDList
                         my writeLog("DEBUG", "處理 ID：" & currentID)
@@ -224,9 +206,9 @@ on run {input, parameters}
                         my writeLog("DEBUG", "執行上傳命令：" & uploadCmd)
                         try
                             do shell script uploadCmd
-                            my writeLog("SUCCESS", "WordPress 字幕上傳完成：" & currentID)
+                            my writeLog("SUCCESS", "WP 字幕上傳完成：" & currentID)
                         on error errMsg
-                            my writeLog("ERROR", "WordPress 字幕上傳失敗：" & errMsg)
+                            my writeLog("ERROR", "WP 字幕上傳失敗：" & errMsg)
                         end try
                     end repeat
                     
@@ -244,13 +226,13 @@ on run {input, parameters}
                 do shell script splitCmd
                 
                 # 單個影片的 WordPress 上傳
-                my writeLog("INFO", "開始上傳字幕到 WordPress...")
+                my writeLog("INFO", "上傳 WP 字幕：" & subtitleID)
                 set uploadCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 /Users/Mac/GitHub/automation/scripts/upload_vtt.py " & quoted form of targetFolderPath & " " & do shell script "echo " & quoted form of subtitleID & " | sed 's/-zh//'"
                 try
                     do shell script uploadCmd
-                    my writeLog("SUCCESS", "WordPress 字幕上傳完成：" & subtitleID)
+                    my writeLog("SUCCESS", "WP 字幕上傳完成：" & subtitleID)
                 on error errMsg
-                    my writeLog("ERROR", "WordPress 字幕上傳失敗：" & errMsg)
+                    my writeLog("ERROR", "WP 字幕上傳失敗：" & errMsg)
                 end try
             end if
 
@@ -265,14 +247,14 @@ on run {input, parameters}
             -- (2) 執行 Python 腳本轉換字幕格式
             --------------------------------------------------------
             try
-                my writeLog("INFO", "開始執行字幕轉換腳本...")
+                my writeLog("INFO", "開始執行字幕轉換腳本：" & subtitleID)
                 set pythonScriptPath to "/Users/Mac/GitHub/automation/scripts/srt_to_ass_with_style.py"
                 -- 使用完整的 Python 路徑和環境設定
                 set pythonCmd to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3"
                 set conversionCmd to "export PATH=/Library/Frameworks/Python.framework/Versions/3.11/bin:/usr/local/bin:$PATH && " & pythonCmd & " " & quoted form of pythonScriptPath & " " & quoted form of newSrtPath
                 
                 do shell script conversionCmd
-                my writeLog("SUCCESS", "字幕格式轉換完成")
+                my writeLog("SUCCESS", "字幕格式轉換完成：" & subtitleID)
             on error errMsg
                 my writeLog("ERROR", "字幕格式轉換失敗：" & errMsg)
                 set end of subtitleConversionFailList to subtitleID
@@ -282,39 +264,43 @@ on run {input, parameters}
             --------------------------------------------------------
             -- (3) ffmpeg 轉檔
             --------------------------------------------------------
-            my writeLog("INFO", "開始 ffmpeg 轉檔...")
+            my writeLog("INFO", "開始 ffmpeg 轉檔：" & subtitleID)
             try
                 -- 使用 find 命令搜尋影片檔案
                 set videoSearchPattern to targetFolderPath & "/" & subtitleID & "-1920*1340"
-                my writeLog("INFO", "搜尋影片檔案：" & videoSearchPattern & ".*")
+                my writeLog("INFO", "搜尋影片檔案：" & subtitleID)
                 
                 -- 使用 find 命令找到實際的影片檔案
                 set findCommand to "find " & quoted form of targetFolderPath & " -maxdepth 1 -type f -name '" & subtitleID & "-1920\\*1340.*' | head -n 1"
-                my writeLog("INFO", "執行搜尋命令：" & findCommand)
-                
+                my writeLog("INFO", "執行搜尋命令...")
                 set foundVideo to do shell script findCommand
                 
                 if foundVideo is "" then
-                    error "找不到符合格式的影片檔案"
+                    error "找不到影片檔案"
                 end if
                 
-                my writeLog("INFO", "找到影片檔案：" & foundVideo)
-                
-                -- 設定字幕和輸出路徑
-                set subtitleAssPath to targetFolderPath & "/" & subtitleID & "-1920*1340-zh.ass"
+                my writeLog("INFO", "找到影片檔案：" & subtitleID)
                 
                 -- 檢查字幕檔案
-                my writeLog("INFO", "檢查字幕檔案：" & subtitleAssPath)
-                if not (do shell script "[ -f " & quoted form of subtitleAssPath & " ] && echo 'yes' || echo 'no'") is "yes" then
-                    error "找不到字幕檔案：" & subtitleAssPath
+                set assPath to targetFolderPath & "/" & subtitleID & "-1920*1340-zh.ass"
+                my writeLog("INFO", "檢查字幕檔案：" & subtitleID)
+                
+                -- 使用 ls 命令來檢查檔案是否存在（因為檔名中有星號）
+                set checkAssCmd to "ls " & quoted form of assPath & " 2>/dev/null || echo ''"
+                set assCheckResult to do shell script checkAssCmd
+                
+                if assCheckResult is "" then
+                    error "找不到字幕檔案：" & assPath
                 end if
+                
+                set assPath to assCheckResult  -- 使用 ls 命令返回的實際檔案路徑
                 
                 -- 設定輸出路徑
                 set outputPath to targetFolderPath & "/" & subtitleID & "-1920*1340-zh.mp4"
                 
                 -- 構建 FFmpeg 命令
-                set ffmpegCommand to "/usr/local/bin/ffmpeg -y -i " & quoted form of foundVideo & " -vf \"ass=" & quoted form of subtitleAssPath & "\" -c:a copy " & quoted form of outputPath & " 2>&1"
-                my writeLog("INFO", "執行命令：" & ffmpegCommand)
+                set ffmpegCommand to "/usr/local/bin/ffmpeg -y -i " & quoted form of foundVideo & " -vf \"ass=" & quoted form of assPath & "\" -c:a copy " & quoted form of outputPath & " 2>&1"
+                my writeLog("INFO", "執行轉檔命令：" & subtitleID)
                 
                 -- 執行轉檔
                 display notification "開始轉檔：" & subtitleID with title "FFmpeg"
@@ -322,7 +308,7 @@ on run {input, parameters}
                 
                 -- 檢查輸出檔案
                 if (do shell script "[ -f " & quoted form of outputPath & " ] && echo 'yes' || echo 'no'") is "yes" then
-                    my writeLog("SUCCESS", "轉檔完成：" & outputPath)
+                    my writeLog("SUCCESS", "轉檔完成：" & subtitleID)
                     display notification "轉檔完成：" & subtitleID with title "FFmpeg"
                 else
                     error "輸出檔案未生成"
@@ -337,7 +323,7 @@ on run {input, parameters}
             end try
 
             -- 轉檔成功後，開始處理 Google Drive 相關操作
-            my writeLog("INFO", "開始處理 Google Drive 上傳...")
+            my writeLog("INFO", "開始處理 Google Drive 上傳：" & subtitleID)
             
             --------------------------------------------------------
             -- (4) 處理 Google Drive 相關操作
@@ -369,7 +355,7 @@ on run {input, parameters}
                     "-H 'Authorization: Bearer " & accessToken & "'"
                 
                 set fuzzyResponse to do shell script fuzzySearchCmd
-                set folderId to do shell script "echo " & quoted form of folderResponse & " | python3 -c 'import sys,json; arr=json.load(sys.stdin).get(\"files\",[]); print(arr[0][\"id\"] if arr else \"\")'"
+                set folderId to do shell script "echo " & quoted form of folderResponse & " | python3 -c \"import sys, json; arr=json.load(sys.stdin).get('files', []); print(arr[0]['id'] if arr else '')\""
             end if
 
             -- 如果找不到資料夾，記錄錯誤
@@ -379,12 +365,12 @@ on run {input, parameters}
                 set folderNotFoundCount to folderNotFoundCount + 1
                 display notification "找不到對應資料夾：「" & subtitleID & "」" with title "Google Drive"
             else
-                my writeLog("SUCCESS", "找到對應資料夾，ID: " & folderId)
+                my writeLog("INFO", "找到對應資料夾")
                 
                 -- 4.4 搜尋同名 Google Docs
                 set searchDocQuery to "mimeType='application/vnd.google-apps.document' and '" & folderId & "' in parents and trashed=false"
                 set docQueryEncoded to do shell script ¬
-                    "python3 -c \"import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))\" " & ¬
+                    "python3 -c \"import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1]))\" " & ¬
                     quoted form of searchDocQuery
                 
                 set searchDocCmd to "curl -s -X GET 'https://www.googleapis.com/drive/v3/files?q=" & docQueryEncoded & ¬
@@ -392,44 +378,43 @@ on run {input, parameters}
                     "-H 'Authorization: Bearer " & accessToken & "'"
                 
                 set docResponse to do shell script searchDocCmd
-                set docID to do shell script "echo " & quoted form of docResponse & " | python3 -c 'import sys,json; arr=json.load(sys.stdin).get(\"files\",[]); print(arr[0][\"id\"] if arr else \"\")'"
+                set docID to do shell script "echo " & quoted form of docResponse & " | python3 -c \"import sys, json; arr=json.load(sys.stdin).get('files', []); print(arr[0]['id'] if arr else '')\""
 
                 -- 4.5 搜尋「嵌入影片」資料夾
                 my writeLog("INFO", "搜尋「嵌入影片」資料夾...")
 
                 set searchEmbedFolderQuery to "mimeType='application/vnd.google-apps.folder' and name='嵌入影片' and '" & folderId & "' in parents and trashed=false"
                 set embedFolderQueryEncoded to do shell script ¬
-                    "python3 -c \"import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))\" " & ¬
-                    quoted form of searchEmbedFolderQuery
+                   "python3 -c \"import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))\" " & ¬
+                   quoted form of searchEmbedFolderQuery
 
                 set searchEmbedFolderCmd to "curl -s -X GET 'https://www.googleapis.com/drive/v3/files?q=" & embedFolderQueryEncoded & ¬
-                    "&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives' " & ¬
-                    "-H 'Authorization: Bearer " & accessToken & "'"
+                   "&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives' " & ¬
+                   "-H 'Authorization: Bearer " & accessToken & "'"
 
                 set embedFolderResponse to do shell script searchEmbedFolderCmd
                 set embedFolderId to do shell script "echo " & quoted form of embedFolderResponse & ¬
-                    " | python3 -c \"import sys, json; arr=json.load(sys.stdin).get('files', []); " & ¬
-                    "print(arr[0]['id'] if arr else '')\""
+                   " | python3 -c \"import sys, json; arr=json.load(sys.stdin).get('files', []); " & ¬
+                   "print(arr[0]['id'] if arr else '')\""
 
                 -- 4.6 上傳轉檔完成的影片到「嵌入影片」資料夾
                 my writeLog("INFO", "開始上傳影片檔案...")
-
+                
                 -- 先建立檔案 metadata
-                set createFileBody to "{\"name\": \"" & subtitleID & "-1920x1340-zh.mp4\", \"parents\": [\"" & embedFolderId & "\"]}"
+                set createFileBody to "{\"name\": \"" & subtitleID & "-1920*1340-zh.mp4\", \"parents\": [\"" & embedFolderId & "\"]}"
 
                 -- 建立上傳 session
                 set sessionCmd to "curl -s -X POST 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true' " & ¬
                     "-H 'Authorization: Bearer " & accessToken & "' " & ¬
                     "-H 'Content-Type: application/json' " & ¬
-                    "-H 'X-Upload-Content-Type: video/mp4' " & ¬
                     "--data '" & createFileBody & "' " & ¬
                     "-D - " & ¬
                     "| grep -i 'Location: ' | cut -d' ' -f2- | tr -d '\\r'"
-
+                
                 my writeLog("INFO", "建立上傳 session...")
                 set uploadUrl to do shell script sessionCmd
-                my writeLog("INFO", "獲得上傳 URL: " & uploadUrl)
-
+                my writeLog("INFO", "獲得上傳 URL")
+                
                 if uploadUrl is not "" then
                     -- 上傳檔案內容
                     set uploadCmd to "curl -s -X PUT '" & uploadUrl & "' " & ¬
@@ -499,7 +484,8 @@ on run {input, parameters}
 
                 set subtitleFolderResponse to do shell script searchSubtitleFolderCmd
                 set subtitleFolderId to do shell script "echo " & quoted form of subtitleFolderResponse & ¬
-                   " | python3 -c \"import sys, json; arr=json.load(sys.stdin).get('files', []); print(arr[0]['id'] if arr else '')\""
+                   " | python3 -c \"import sys, json; arr=json.load(sys.stdin).get('files', []); " & ¬
+                   "print(arr[0]['id'] if arr else '')\""
 
                 -- 找出所有字幕檔
                 set findCmd to "find " & quoted form of targetFolderPath & " -maxdepth 1 -type f \\( -name \"*.srt\" -o -name \"*.ass\" -o -name \"*.vtt\" \\)"
@@ -521,7 +507,7 @@ on run {input, parameters}
                    if uploadUrl is not "" then
                        try
                            do shell script "curl -s -X PUT '" & uploadUrl & "' -H 'Authorization: Bearer " & accessToken & "' --data-binary '@" & filePath & "'"
-                           my writeLog("SUCCESS", "已上傳字幕檔：" & fileName)
+                           my writeLog("SUCCESS", "已上傳字幕檔：" & subtitleID)
                        on error errMsg
                            my writeLog("ERROR", "字幕檔上傳失敗：" & fileName & " - " & errMsg)
                        end try

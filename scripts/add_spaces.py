@@ -1,14 +1,12 @@
 import re
 import sys
-from logger import setup_logger
+from logger import get_workflow_logger
 
-logger = setup_logger('subtitle_formatter')
+logger = get_workflow_logger('3', 'subtitle_formatter')  # Stage 3 因為這是字幕處理階段
 
 def format_subtitle_spacing(input_file, output_file=None):
     if output_file is None:
         output_file = input_file
-
-    logger.info(f"處理檔案：{input_file}")
     
     def process_text(text):
         if ' --> ' in text or text.strip().isdigit():
@@ -44,8 +42,6 @@ def format_subtitle_spacing(input_file, output_file=None):
         with open(output_file, 'w', encoding='utf-8') as f:
             f.writelines(processed_lines)
             
-        logger.info(f"處理完成：{output_file}")
-        
     except Exception as e:
         logger.error(f"處理失敗：{str(e)}")
         raise

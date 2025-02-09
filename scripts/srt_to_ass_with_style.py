@@ -1,42 +1,19 @@
+#!/usr/bin/env python3
+# srt_to_ass_with_style.py
+
 import os
-import logging
 import sys
 import subprocess
+from logger import get_workflow_logger
+
+logger = get_workflow_logger('3', 'subtitle_converter')  # Stage 3 因為這是字幕處理階段
 
 # 檢查並安裝 pysubs2
 try:
     import pysubs2
 except ImportError:
-    logging.info("正在安裝 pysubs2...")
     subprocess.check_call([sys.executable, "-m", "pip", "install", "pysubs2"])
     import pysubs2
-
-
-# 設定主要日誌路徑和符號連結
-main_log_path = "/Users/Mac/Library/Logs/subtitle_converter.log"
-symlink_path = "/Users/Mac/GitHub/automation/logs/subtitle_converter.log"
-
-# 確保目錄存在
-os.makedirs(os.path.dirname(main_log_path), exist_ok=True)
-os.makedirs(os.path.dirname(symlink_path), exist_ok=True)
-
-# 創建符號連結（如果不存在）
-if not os.path.exists(symlink_path):
-    try:
-        os.symlink(main_log_path, symlink_path)
-    except FileExistsError:
-        pass
-
-# 設定日誌
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),  # 輸出到控制台
-        logging.FileHandler(main_log_path, mode='a', encoding='utf-8')  # 正確
-    ]
-)
-logger = logging.getLogger(__name__)
 
 def convert_subtitle(srt_path):
     """
@@ -51,11 +28,8 @@ def convert_subtitle(srt_path):
             logger.error(f"Input file not found: {srt_path}")
             return None
             
-        logger.info(f"Processing subtitle file: {srt_path}")
-        
         # Load the subtitle
         subs = pysubs2.load(srt_path)
-        logger.info("Successfully loaded subtitle file")
         
         # Create a new style
         style = pysubs2.SSAStyle(
@@ -82,12 +56,10 @@ def convert_subtitle(srt_path):
         
         # Add the style with name "蘋方 1340"
         subs.styles["蘋方 1340"] = style
-        logger.info("Style applied successfully")
         
         # Set all events to use this style
         for line in subs:
             line.style = "蘋方 1340"
-        logger.info("Applied style to all subtitle lines")
         
         # Set script info
         subs.info["PlayResX"] = "1920"
@@ -99,11 +71,8 @@ def convert_subtitle(srt_path):
         base_name = filename.replace("-zh.srt", "")  # 移除 -zh.srt
         output_path = os.path.join(directory, f"{base_name}-1920*1340-zh.ass")
         
-        logger.info(f"Saving to: {output_path}")
-        
         # Save as ASS
         subs.save(output_path)
-        logger.info(f"Successfully saved ASS file: {output_path}")
         return output_path
         
     except Exception as e:
@@ -120,13 +89,11 @@ if __name__ == "__main__":
             sys.exit(1)
         
         srt_path = sys.argv[1]
-        logger.info(f"Starting conversion for: {srt_path}")
         
         # 執行轉換
         output_file = convert_subtitle(srt_path)
         
         if output_file:
-            logger.info(f"Conversion completed successfully. Output file: {output_file}")
             sys.exit(0)
         else:
             logger.error("Conversion failed")
