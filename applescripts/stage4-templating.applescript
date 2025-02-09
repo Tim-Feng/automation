@@ -1,19 +1,15 @@
--- Helper function to write logs
+-- 日誌記錄函數
 on writeLog(level, message)
-    set logPath to "/Users/Mac/Library/Logs/ig_template_processor.log"
-    set dateStr to do shell script "date '+%Y-%m-%d %H:%M:%S'"
-
-    -- 根據等級設定圖示
-    set levelIcon to ""
-    if level is "INFO" then
-        set levelIcon to "ℹ️"
-    else if level is "ERROR" then
-        set levelIcon to "❌"
-    else if level is "SUCCESS" then
-        set levelIcon to "✓"
-    end if
-
-    do shell script "echo '" & dateStr & " " & levelIcon & " [" & level & "] " & message & "' >> " & quoted form of logPath
+    set scriptPath to "/Users/Mac/GitHub/automation/scripts/log_bridge.py"
+    set stage to "4"
+    set component to "templating"
+    
+    try
+        do shell script "python3 " & quoted form of scriptPath & " " & stage & " " & level & " " & quoted form of message & " " & component
+    on error errMsg
+        -- 如果日誌記錄失敗，使用基本的 stderr 輸出
+        do shell script "echo 'Log Error: " & errMsg & "' >&2"
+    end try
 end writeLog
 
 -- Helper function to join list items
@@ -205,7 +201,7 @@ on run {input, parameters}
                     -- 上傳影片到「嵌入影片」資料夾
                     set videoPath to movieDirectory & "/" & movieID & "-1920*3414-zh.mp4"
                     set videoName to movieID & "-1920*3414-zh.mp4"
-                    my writeLog("INFO", "開始上傳影片到「嵌入影片」資料夾：" & videoName)
+                    my writeLog("INFO", "開始上傳嵌入影片")
                     
                     set uploadVideoCommand to quoted form of pythonPath & " " & quoted form of driveScriptPath & ¬
                         " --upload-file " & quoted form of videoPath & ¬
@@ -213,12 +209,12 @@ on run {input, parameters}
                         " " & quoted form of embedFolderId
                     
                     do shell script uploadVideoCommand
-                    my writeLog("SUCCESS", "影片上傳完成")
+                    my writeLog("SUCCESS", "嵌入影片上傳完成")
                     
                     -- 上傳封面圖到「截圖」資料夾
                     set coverPath to movieDirectory & "/" & movieID & "_cover.jpg"
                     set coverName to movieID & "_cover.jpg"
-                    my writeLog("INFO", "開始上傳封面圖到「截圖」資料夾：" & coverName)
+                    my writeLog("INFO", "開始上傳封面")
                     
                     set uploadCoverCommand to quoted form of pythonPath & " " & quoted form of driveScriptPath & ¬
                         " --upload-file " & quoted form of coverPath & ¬
@@ -226,7 +222,7 @@ on run {input, parameters}
                         " " & quoted form of screenshotFolderId
                     
                     do shell script uploadCoverCommand
-                    my writeLog("SUCCESS", "封面圖上傳完成")
+                    my writeLog("SUCCESS", "封面上傳完成")
                 on error errMsg
                     my writeLog("ERROR", "檔案上傳失敗：" & errMsg)
                     error "檔案上傳失敗"

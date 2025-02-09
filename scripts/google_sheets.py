@@ -2,11 +2,17 @@ import os
 import argparse
 import gspread
 from google.oauth2.service_account import Credentials
-from logger import setup_logger
+from logger import get_workflow_logger
 from dotenv import load_dotenv
 from typing import List, Dict, Any
 
-logger = setup_logger('google_sheets')
+logger = get_workflow_logger('1', 'content_automation')  # Stage 1 因為這是內容準備階段
+
+def _summarize_cell_data(data: List[List[Any]]) -> str:
+    """摘要化儲存格數據，避免記錄過多細節"""
+    if not data:
+        return "空數據"
+    return f"{len(data)} 列 x {len(data[0])} 欄"
 
 def setup_google_sheets():
     """設定並連接 Google Sheets"""
@@ -120,7 +126,6 @@ def batch_update(sheet, updates: List[Dict[str, Any]]) -> None:
     """
     try:
         sheet.batch_update(updates)
-        logger.info(f"批量更新完成，共 {len(updates)} 筆")
     except Exception as e:
         logger.error(f"批量更新失敗: {str(e)}")
         raise

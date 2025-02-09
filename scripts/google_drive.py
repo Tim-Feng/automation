@@ -203,7 +203,7 @@ class GoogleDriveAPI:
             files = response.json().get("files", [])
             if files:
                 folder_id = files[0]["id"]
-                logger.info(f"Found folder: {folder_name} with ID: {folder_id}")
+                logger.info(f"找到資料夾：{folder_name}")
                 return folder_id
             
             logger.warning(f"Folder not found: {folder_name}")
@@ -261,7 +261,6 @@ class GoogleDriveAPI:
             
             # 獲取上傳 URL
             upload_url = response.headers.get('location')
-            logger.info("獲得上傳 URL")
             
             # 獲取檔案 MIME type
             file_extension = Path(file_path).suffix.lower()
@@ -280,7 +279,13 @@ class GoogleDriveAPI:
                 upload_response.raise_for_status()
             
             file_id = upload_response.json()["id"]
-            logger.info(f"字幕檔上傳成功：{os.path.basename(file_path).split('-')[0]}")
+            # 根據檔案類型顯示不同的訊息
+            if "_cover" in file_name:
+                logger.info("封面上傳成功")
+            elif file_extension == ".mp4":
+                logger.info("嵌入影片上傳成功")
+            else:
+                logger.info("檔案上傳成功")
             return file_id
             
         except Exception as e:
