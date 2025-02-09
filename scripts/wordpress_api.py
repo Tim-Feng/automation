@@ -18,7 +18,7 @@ class WordPressAPI:
             os.getenv("WP_USERNAME"),
             os.getenv("WP_APP_PASSWORD")
         )
-
+        
     def create_draft(
         self,
         title: str,
@@ -30,47 +30,90 @@ class WordPressAPI:
         """建立影片草稿"""
         endpoint = f"{self.api_base}/video"
         
-        formatted_content = f"""<!-- wp:paragraph -->
-<p>{content}</p>
-<!-- /wp:paragraph -->"""
-        
         data = {
-            "title": title,
-            "content": formatted_content,
-            "status": "draft",
-            "comment_status": "closed",
-            "ping_status": "closed",
-            "meta": {
-                "video_url": video_url,
-                "length": video_length,
-                "_length": video_length,
-                "video_length": video_length
+            'title': title,
+            'content': content,
+            'status': 'draft',
+            'meta': {
+                'video_url': video_url,
+                'length': video_length
             }
         }
         
         if video_tag:
-            data["video_tag"] = video_tag
+            data['video_tag'] = video_tag
             
         try:
-            self.logger.info(f"開始建立草稿: {title}")
+            response = requests.post(endpoint, auth=self.auth, json=data)
+            
+            if response.status_code != 201:
+                self.logger.error(f"建立草稿失敗 - Status: {response.status_code}, Response: {response.text}")
+                return None
+                
+            return response.json()
+            
+        except Exception as e:
+            self.logger.error(f"建立草稿時發生錯誤: {str(e)}")
+            return None
+            
+    def upload_media(self, file_path: Union[str, Path], post_id: Optional[int] = None) -> Dict:
+        """上傳媒體檔案到 WordPress
+        
+        Args:
+            file_path: 檔案路徑
+            post_id: 關聯的文章 ID（可選）
+            
+        Returns:
+            Dict: 上傳結果
+        """
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"找不到檔案: {file_path}")
+            
+        # 準備上傳資料
+        endpoint = f"{self.api_base}/media"
+        files = {
+            'file': (
+                file_path.name,
+                open(file_path, 'rb'),
+                'text/vtt' if file_path.suffix.lower() == '.vtt' else None
+            )
+        }
+        
+        data = {'title': file_path.stem}
+        if post_id:
+            data['post'] = post_id
+            
+        try:
+            # 上傳檔案
+            self.logger.info(f"開始上傳檔案到 {endpoint}")
             response = requests.post(
                 endpoint,
                 auth=self.auth,
-                json=data
+                files=files,
+                data=data
             )
             
-            if response.status_code != 201:
-                raise Exception(f"建立草稿失敗: {response.text}")
-            
-            result = response.json()
-            self.logger.info(f"WordPress 草稿建立成功: {result.get('link')}")
-            return result
+            if response.status_code not in (201, 200):
+                self.logger.error(f"上傳失敗 - Status: {response.status_code}, Response: {response.text}")
+                return None
+                
+            return response.json()
             
         except Exception as e:
-            self.logger.error(f"WordPress API 錯誤: {str(e)}")
-            raise
-
+            self.logger.error(f"上傳檔案失敗: {str(e)}")
+            return None
+            
     def upload_vtt(self, post_id: int, vtt_path: Union[str, Path]) -> Dict:
+        """上傳 VTT 字幕檔案，並更新文章的字幕設定
+        
+        Args:
+            post_id: 文章 ID
+            vtt_path: 字幕檔案路徑
+            
+        Returns:
+            Dict: 上傳結果
+        """
         vtt_path = Path(vtt_path)
         if not vtt_path.exists():
             raise FileNotFoundError(f"找不到字幕檔: {vtt_path}")
@@ -85,67 +128,41 @@ class WordPressAPI:
             
         language = lang_match.group(1)
         self.logger.info(f"從檔名判斷語系: {language}")
-
+        
         self.logger.info(f"開始上傳字幕: {vtt_path.name}")
         
-        # 1. 上傳字幕檔案
-        endpoint = f"{self.api_base}/media"
-        files = {
-            'file': (
-                vtt_path.name,
-                open(vtt_path, 'rb'),
-                'text/vtt'
-            )
-        }
-        
-        data = {
-            'post': post_id,
-            'title': vtt_path.stem
-        }
-        
         try:
-            # 上傳檔案
-            self.logger.info(f"開始上傳字幕檔案到 {endpoint}")
-            response = requests.post(
-                endpoint,
-                auth=self.auth,
-                files=files,
-                data=data
-            )
-            
-            # 日誌詳細資訊
-            self.logger.debug(f"Request URL: {response.request.url}")
-            self.logger.debug(f"Request Headers: {response.request.headers}")
-            self.logger.debug(f"Response Status: {response.status_code}")
-            self.logger.debug(f"Response Body: {response.text}")
-
-            if response.status_code not in (201, 200):
-                self.logger.error(f"上傳失敗 - Status: {response.status_code}, Response: {response.text}")
-                raise Exception(f"上傳失敗: {response.text}")
-            
-            upload_result = response.json()
-            self.logger.info(f"字幕上傳成功: {upload_result.get('source_url')}")
+            # 1. 上傳字幕檔案
+            self.logger.info(f"開始上傳檔案到 {self.api_base}/media")
+            upload_result = self.upload_media(vtt_path, post_id)
+            if not upload_result:
+                raise Exception("上傳字幕檔案失敗")
+                
+            vtt_url = upload_result.get('source_url')
+            if not vtt_url:
+                raise Exception("無法取得字幕 URL")
+                
+            self.logger.info(f"字幕上傳成功: {vtt_url}")
             
             # 2. 更新文章的字幕設定
             self.logger.info(f"更新文章 {post_id} 的字幕設定...")
             update_endpoint = f"{self.api_base}/video/{post_id}"
             
-            # 構建 text_tracks 資料結構
-            update_data = {
-                "meta": {
-                    "text_tracks": {
-                        "languages": [language],
-                        "sources": [upload_result.get('source_url')],
-                        "action": ""  # 根據需要調整
+            subtitle_data = {
+                'meta': {
+                    'text_tracks': {
+                        'languages': [language],
+                        'sources': [vtt_url],
+                        'action': ''
                     }
                 }
             }
             
-            self.logger.info(f"發送字幕設定請求: {update_data}")
+            self.logger.info(f"發送字幕設定請求: {subtitle_data}")
             update_response = requests.patch(
                 update_endpoint,
                 auth=self.auth,
-                json=update_data
+                json=subtitle_data
             )
             
             if update_response.status_code not in (200, 201):
@@ -162,9 +179,6 @@ class WordPressAPI:
             self.logger.error(f"上傳字幕時發生錯誤: {str(e)}")
             raise
             
-        finally:
-            files['file'][1].close()
-
     def get_post_id_by_title(self, title: str) -> Union[int, None]:
         """根據標題取得文章 ID"""
         endpoint = f"{self.api_base}/video"
@@ -174,18 +188,18 @@ class WordPressAPI:
         }
         
         try:
-            response = requests.get(
-                endpoint,
-                auth=self.auth,
-                params=params
-            )
+            response = requests.get(endpoint, auth=self.auth, params=params)
             
-            if response.status_code == 200:
-                posts = response.json()
-                if posts:
-                    return posts[0]['id']
-            return None
+            if response.status_code != 200:
+                self.logger.error(f"搜尋文章失敗 - Status: {response.status_code}, Response: {response.text}")
+                return None
+                
+            results = response.json()
+            if not results:
+                return None
+                
+            return results[0]['id']
             
         except Exception as e:
-            self.logger.error(f"查詢文章失敗: {str(e)}")
+            self.logger.error(f"搜尋文章時發生錯誤: {str(e)}")
             return None

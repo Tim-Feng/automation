@@ -6,11 +6,13 @@ import sys
 from pathlib import Path
 import re
 from dotenv import load_dotenv
-from logger import setup_logger
+from logger import get_workflow_logger
 from wordpress_api import WordPressAPI
 from google_sheets import setup_google_sheets
 
-def get_post_id_from_sheets(video_id: str, logger) -> int:
+logger = get_workflow_logger('3', 'vtt_uploader')  # Stage 3 因為這是字幕處理階段
+
+def get_post_id_from_sheets(video_id: str) -> int:
     """從 Google Sheets H 欄取得 WordPress 文章 ID"""
     sheet = setup_google_sheets()
     all_values = sheet.get_all_values()
@@ -38,7 +40,7 @@ def get_post_id_from_sheets(video_id: str, logger) -> int:
     logger.error(f"在 Google Sheets 中找不到影片 ID: {video_id}")
     return None
 
-def find_vtt_files(folder_path: str, video_id: str, logger) -> list:
+def find_vtt_files(folder_path: str, video_id: str) -> list:
     """找出指定資料夾中符合影片 ID 的 VTT 檔案"""
     vtt_files = []
     folder = Path(folder_path)
@@ -50,22 +52,34 @@ def find_vtt_files(folder_path: str, video_id: str, logger) -> list:
     # 搜尋所有符合格式的 VTT 檔案
     for vtt_file in folder.glob(pattern):
         logger.info(f"找到 VTT 檔案: {vtt_file}")
-        vtt_files.append(vtt_file)
+        vtt_files.append(str(vtt_file))
     
     if not vtt_files:
         logger.error(f"在 {folder} 中找不到符合 {pattern} 的檔案")
         
     return vtt_files
 
+def _extract_key_info(response: dict) -> dict:
+    """從 WordPress API 響應中提取關鍵信息"""
+    if not response:
+        return {}
+    return {
+        'id': response.get('id'),
+        'status': response.get('status'),
+        'type': response.get('type'),
+        'link': response.get('link'),
+        'title': response.get('title', {}).get('raw') if isinstance(response.get('title'), dict) else response.get('title'),
+        'meta': response.get('meta', {})
+    }
+
 def main():
     if len(sys.argv) < 3:
         print("Usage: upload_vtt.py <folder_path> <video_ids>")
         sys.exit(1)
         
-    # 設定環境變數和 logger
+    # 設定環境變數
     dotenv_path = Path(__file__).parent.parent / 'config' / '.env'
     load_dotenv(str(dotenv_path))
-    logger = setup_logger('wordpress_upload')
     
     folder_path = sys.argv[1]
     video_ids = sys.argv[2].split()  # 支援多個影片 ID
@@ -79,22 +93,33 @@ def main():
         logger.info(f"開始處理影片 ID: {video_id}")
         
         # 直接從 Google Sheets 取得 WordPress 文章 ID
-        post_id = get_post_id_from_sheets(video_id, logger)
+        post_id = get_post_id_from_sheets(video_id)
         if not post_id:
             continue
             
         # 找出所有相關的 VTT 檔案
-        vtt_files = find_vtt_files(folder_path, video_id, logger)
+        vtt_files = find_vtt_files(folder_path, video_id)
         if not vtt_files:
             continue
             
         # 上傳每個 VTT 檔案
         for vtt_file in vtt_files:
             try:
-                result = wp.upload_vtt(post_id, vtt_file)
-                logger.info(f"上傳結果: {result}")
+                # 從檔名判斷語系
+                lang = Path(vtt_file).stem.split('-')[-1]
+                logger.info(f"從檔名判斷語系: {lang}")
+                
+                # 開始上傳字幕
+                logger.info(f"開始上傳字幕: {Path(vtt_file).name}")
+                
+                # 上傳字幕檔案
+                upload_result = wp.upload_vtt(post_id, vtt_file)
+                if not upload_result:
+                    continue
+                
+                logger.info(f"字幕上傳和設定完成")
             except Exception as e:
-                logger.error(f"上傳字幕 {vtt_file.name} 失敗: {str(e)}")
+                logger.error(f"上傳字幕 {vtt_file} 失敗: {str(e)}")
 
 if __name__ == "__main__":
     main()
