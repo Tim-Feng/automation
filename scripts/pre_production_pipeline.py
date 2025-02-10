@@ -18,7 +18,7 @@ ENABLE_WORDPRESS = True
 # 影片下載策略配置
 format_strategies = [
     {
-        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
+        'format': 'bestvideo[height<=1080]+bestaudio[acodec!=opus][ext=m4a]/best[height<=1080]',
         'postprocessor_args': ['-c:v', 'libx264', '-crf', '23']
     }
 ]
@@ -89,7 +89,7 @@ def download_video(youtube_url, video_id, download_dir, max_retries=3):
                 'fragment_retries': 10,
                 'ffmpeg_location': '/usr/local/bin/ffmpeg',
                 'postprocessor_args': {
-                    'ffmpeg': strategy['postprocessor_args']
+                    'ffmpeg': ['-c:v', 'libx264', '-crf', '23', '-c:a', 'aac', '-b:a', '192k']
                 }
             }
             
