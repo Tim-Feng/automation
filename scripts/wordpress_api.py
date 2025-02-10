@@ -35,6 +35,8 @@ class WordPressAPI:
             'title': title,
             'content': content,
             'status': 'draft',
+            'comment_status': 'closed',  # 關閉評論
+            'ping_status': 'closed',     # 關閉 pingbacks
             'meta': {
                 'video_url': video_url,
                 'length': video_length
