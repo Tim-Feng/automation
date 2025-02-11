@@ -8,8 +8,14 @@ import requests
 from logger import get_workflow_logger
 from dotenv import load_dotenv
 import sys
+import time
+from requests.exceptions import RequestException, ConnectionError
 
 logger = get_workflow_logger('4', 'google_drive')  # Stage-4 因為這是最後的範本處理階段，主要用於上傳成品
+
+# 重試相關常量
+MAX_RETRIES = 3
+INITIAL_RETRY_DELAY = 1  # 初始重試延遲（秒）
 
 class GoogleDriveAPI:
     def __init__(self):
@@ -64,19 +70,14 @@ class GoogleDriveAPI:
         """
         try:
             access_token = self.get_access_token()
-            
-            # 獲取父資料夾的 driveId
             drive_id = self.get_drive_id(parent_id, access_token)
             
-            # 準備資料夾元數據
             metadata = {
                 "name": folder_name,
                 "mimeType": "application/vnd.google-apps.folder",
-                "parents": [parent_id]
+                "parents": [parent_id],
+                "driveId": drive_id
             }
-            
-            if drive_id:
-                metadata["driveId"] = drive_id
             
             headers = {
                 "Authorization": f"Bearer {access_token}",
@@ -88,19 +89,31 @@ class GoogleDriveAPI:
                 "includeItemsFromAllDrives": True
             }
             
-            response = requests.post(
-                f"{self.base_url}/files",
-                params=params,
-                headers=headers,
-                json=metadata
-            )
-            response.raise_for_status()
-            
-            folder_id = response.json()["id"]
-            return folder_id
+            for attempt in range(MAX_RETRIES):
+                try:
+                    response = requests.post(
+                        f"{self.base_url}/files",
+                        params=params,
+                        headers=headers,
+                        json=metadata
+                    )
+                    response.raise_for_status()
+                    
+                    folder_id = response.json()["id"]
+                    return folder_id
+                    
+                except ConnectionError as e:
+                    if attempt == MAX_RETRIES - 1:
+                        logger.error(f"創建資料夾失敗: {str(e)}")
+                        raise
+                    time.sleep(INITIAL_RETRY_DELAY * (2 ** attempt))
+                    
+                except Exception as e:
+                    logger.error(f"創建資料夾失敗: {str(e)}")
+                    raise
             
         except Exception as e:
-            logger.error(f"Failed to create folder: {str(e)}")
+            logger.error(f"創建資料夾失敗: {str(e)}")
             raise
 
     def create_google_docs(self, name: str, parent_id: str) -> str:
@@ -120,11 +133,9 @@ class GoogleDriveAPI:
             metadata = {
                 "name": name,
                 "mimeType": "application/vnd.google-apps.document",
-                "parents": [parent_id]
+                "parents": [parent_id],
+                "driveId": drive_id
             }
-            
-            if drive_id:
-                metadata["driveId"] = drive_id
             
             headers = {
                 "Authorization": f"Bearer {access_token}",
@@ -136,39 +147,61 @@ class GoogleDriveAPI:
                 "includeItemsFromAllDrives": True
             }
             
-            response = requests.post(
-                f"{self.base_url}/files",
-                params=params,
-                headers=headers,
-                json=metadata
-            )
-            response.raise_for_status()
-            
-            docs_id = response.json()["id"]
-            return docs_id
+            for attempt in range(MAX_RETRIES):
+                try:
+                    response = requests.post(
+                        f"{self.base_url}/files",
+                        params=params,
+                        headers=headers,
+                        json=metadata
+                    )
+                    response.raise_for_status()
+                    
+                    docs_id = response.json()["id"]
+                    return docs_id
+                    
+                except ConnectionError as e:
+                    if attempt == MAX_RETRIES - 1:
+                        logger.error(f"創建 Google Docs 失敗: {str(e)}")
+                        raise
+                    time.sleep(INITIAL_RETRY_DELAY * (2 ** attempt))
+                    
+                except Exception as e:
+                    logger.error(f"創建 Google Docs 失敗: {str(e)}")
+                    raise
             
         except Exception as e:
-            logger.error(f"Failed to create Google Docs: {str(e)}")
+            logger.error(f"創建 Google Docs 失敗: {str(e)}")
             raise
 
-    def get_drive_id(self, file_id: str, access_token: str) -> Optional[str]:
+    def get_drive_id(self, file_id: str, access_token: str) -> str:
         """獲取檔案所在的 Drive ID"""
-        try:
-            headers = {"Authorization": f"Bearer {access_token}"}
-            params = {"supportsAllDrives": True, "fields": "driveId"}
-            
-            response = requests.get(
-                f"{self.base_url}/files/{file_id}",
-                headers=headers,
-                params=params
-            )
-            response.raise_for_status()
-            
-            return response.json().get("driveId")
-            
-        except Exception as e:
-            logger.error(f"Failed to get drive ID: {str(e)}")
-            return None
+        for attempt in range(MAX_RETRIES):
+            try:
+                headers = {"Authorization": f"Bearer {access_token}"}
+                params = {"supportsAllDrives": True, "fields": "driveId"}
+                
+                response = requests.get(
+                    f"{self.base_url}/files/{file_id}",
+                    headers=headers,
+                    params=params
+                )
+                response.raise_for_status()
+                
+                drive_id = response.json().get("driveId")
+                if not drive_id:
+                    raise ValueError(f"無法獲取檔案 {file_id} 的 Drive ID")
+                return drive_id
+                
+            except ConnectionError as e:
+                if attempt == MAX_RETRIES - 1:
+                    logger.error(f"獲取 Drive ID 失敗: {str(e)}")
+                    raise
+                time.sleep(INITIAL_RETRY_DELAY * (2 ** attempt))
+                
+            except Exception as e:
+                logger.error(f"獲取 Drive ID 失敗: {str(e)}")
+                raise
 
     def find_folder(self, folder_name: str, parent_id: str) -> Optional[str]:
         """搜尋資料夾
@@ -178,7 +211,7 @@ class GoogleDriveAPI:
             parent_id: 父資料夾 ID
             
         Returns:
-            Optional[str]: 資料夾 ID，如果找不到則返回空字串
+            Optional[str]: 資料夾 ID，如果找不到則返回 None
         """
         try:
             access_token = self.get_access_token()
@@ -193,24 +226,30 @@ class GoogleDriveAPI:
                 "corpora": "allDrives"
             }
             
-            response = requests.get(
-                f"{self.base_url}/files",
-                headers=headers,
-                params=params
-            )
-            response.raise_for_status()
-            
-            files = response.json().get("files", [])
-            if files:
-                folder_id = files[0]["id"]
-                logger.info(f"找到資料夾：{folder_name}")
-                return folder_id
-            
-            logger.warning(f"Folder not found: {folder_name}")
-            return ""
+            for attempt in range(MAX_RETRIES):
+                try:
+                    response = requests.get(
+                        f"{self.base_url}/files",
+                        headers=headers,
+                        params=params
+                    )
+                    response.raise_for_status()
+                    
+                    files = response.json().get("files", [])
+                    return files[0]["id"] if files else None
+                    
+                except ConnectionError as e:
+                    if attempt == MAX_RETRIES - 1:
+                        logger.error(f"搜尋資料夾失敗: {str(e)}")
+                        raise
+                    time.sleep(INITIAL_RETRY_DELAY * (2 ** attempt))
+                    
+                except Exception as e:
+                    logger.error(f"搜尋資料夾失敗: {str(e)}")
+                    raise
             
         except Exception as e:
-            logger.error(f"Failed to find folder: {str(e)}")
+            logger.error(f"搜尋資料夾失敗: {str(e)}")
             raise
 
     def upload_file(self, file_path: str, file_name: str, folder_id: str) -> str:
@@ -224,72 +263,83 @@ class GoogleDriveAPI:
         Returns:
             str: 上傳檔案的 ID
         """
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"檔案不存在: {file_path}")
+            
         try:
             access_token = self.get_access_token()
-            
-            # 獲取 driveId
             drive_id = self.get_drive_id(folder_id, access_token)
             
-            # 準備檔案元數據
             metadata = {
                 "name": file_name,
-                "parents": [folder_id]
+                "parents": [folder_id],
+                "driveId": drive_id
             }
             
-            if drive_id:
-                metadata["driveId"] = drive_id
-            
-            # 創建上傳 session
-            headers = {
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json"
-            }
-            
-            params = {
-                "uploadType": "resumable",
-                "supportsAllDrives": True,
-                "includeItemsFromAllDrives": True
-            }
-            
-            response = requests.post(
-                f"{self.upload_url}/files",
-                params=params,
-                headers=headers,
-                json=metadata
-            )
-            response.raise_for_status()
-            
-            # 獲取上傳 URL
-            upload_url = response.headers.get('location')
-            
-            # 獲取檔案 MIME type
-            file_extension = Path(file_path).suffix.lower()
-            content_type = "video/mp4" if file_extension == ".mp4" else "image/jpeg"
-            
-            # 上傳檔案內容
-            with open(file_path, "rb") as f:
-                upload_headers = {
-                    "Content-Type": content_type
+            with open(file_path, 'rb') as file_content:
+                # 第一步：獲取上傳 URL
+                for attempt in range(MAX_RETRIES):
+                    try:
+                        headers = {
+                            "Authorization": f"Bearer {access_token}",
+                            "Content-Type": "application/json"
+                        }
+                        params = {
+                            "uploadType": "resumable",
+                            "supportsAllDrives": True
+                        }
+                        
+                        response = requests.post(
+                            f"{self.upload_url}/files",
+                            params=params,
+                            headers=headers,
+                            json=metadata
+                        )
+                        response.raise_for_status()
+                        
+                        upload_url = response.headers.get('Location')
+                        if not upload_url:
+                            raise ValueError("無法獲取上傳 URL")
+                        break
+                        
+                    except ConnectionError as e:
+                        if attempt == MAX_RETRIES - 1:
+                            logger.error(f"獲取上傳 URL 失敗: {str(e)}")
+                            raise
+                        time.sleep(INITIAL_RETRY_DELAY * (2 ** attempt))
+                
+                # 第二步：上傳檔案內容
+                file_size = os.path.getsize(file_path)
+                headers = {
+                    "Content-Length": str(file_size),
+                    "Content-Type": "application/octet-stream"
                 }
-                upload_response = requests.put(
-                    upload_url,
-                    data=f,
-                    headers=upload_headers
-                )
-                upload_response.raise_for_status()
-            
-            file_id = upload_response.json()["id"]
-            # 根據檔案類型顯示不同的訊息
-            if "_cover" in file_name:
-                logger.info("封面上傳成功")
-            elif file_extension == ".mp4":
-                logger.info("嵌入影片上傳成功")
-            else:
-                logger.info("檔案上傳成功")
-            return file_id
-            
+                
+                for attempt in range(MAX_RETRIES):
+                    try:
+                        response = requests.put(
+                            upload_url,
+                            data=file_content,
+                            headers=headers
+                        )
+                        response.raise_for_status()
+                        
+                        file_id = response.json()["id"]
+                        return file_id
+                        
+                    except ConnectionError as e:
+                        if attempt == MAX_RETRIES - 1:
+                            logger.error(f"上傳檔案失敗: {str(e)}")
+                            raise
+                        time.sleep(INITIAL_RETRY_DELAY * (2 ** attempt))
+                        file_content.seek(0)
+                    
+                    except Exception as e:
+                        logger.error(f"上傳檔案失敗: {str(e)}")
+                        raise
+        
         except Exception as e:
-            logger.error(f"Failed to upload file: {str(e)}")
+            logger.error(f"上傳檔案失敗: {str(e)}")
             raise
 
 def main():
