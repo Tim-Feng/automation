@@ -40,9 +40,31 @@ end getEnvValue
 
 -- Helper 函數：創建 Trello 卡片
 on createTrelloCard(cardName, apiKey, token, listID, templateCardID)
-    set createCardURL to "https://api.trello.com/1/cards"
-    set createCardCommand to "curl -X POST " & quoted form of createCardURL & " -d \"key=" & apiKey & "\" -d \"token=" & token & "\" -d \"idList=" & listID & "\" -d \"name=" & cardName & "\" -d \"idCardSource=" & templateCardID & "\""
-    do shell script createCardCommand
+    set maxRetries to 3
+    set retryDelay to 5 -- 5 秒延遲
+    
+    repeat with retryCount from 1 to maxRetries
+        try
+            my writeLog("INFO", "嘗試創建 Trello 卡片 (" & retryCount & "/" & maxRetries & ")")
+            
+            set createCardURL to "https://api.trello.com/1/cards"
+            set createCardCommand to "curl -X POST " & quoted form of createCardURL & " -d \"key=" & apiKey & "\" -d \"token=" & token & "\" -d \"idList=" & listID & "\" -d \"name=" & cardName & "\" -d \"idCardSource=" & templateCardID & "\""
+            
+            set response to do shell script createCardCommand
+            
+            my writeLog("INFO", "Trello 卡片創建成功")
+            return response
+            
+        on error errMsg
+            if retryCount is maxRetries then
+                my writeLog("ERROR", "創建 Trello 卡片失敗：" & errMsg)
+                error "創建 Trello 卡片失敗：" & errMsg
+            else
+                my writeLog("WARNING", "創建 Trello 卡片失敗，" & retryDelay & " 秒後重試：" & errMsg)
+                delay retryDelay
+            end if
+        end try
+    end repeat
 end createTrelloCard
 
 on run {input, parameters}
@@ -182,6 +204,7 @@ on run {input, parameters}
                 error "嵌入影片資料夾 ID 未設定"
             end if
             
+            set uploadSuccess to false
             try
                 set uploadConvertedCommand to quoted form of pythonPath & " " & quoted form of driveScriptPath & ¬
                     " --upload-file " & quoted form of outputFilePath & ¬
@@ -189,16 +212,27 @@ on run {input, parameters}
                     " " & quoted form of embeddedFolderID
                 
                 do shell script uploadConvertedCommand
+                set uploadSuccess to true
+                my writeLog("SUCCESS", "轉檔影片上傳成功")
                 
             on error errMsg
                 my writeLog("ERROR", "轉檔影片上傳失敗：" & errMsg)
-                error "轉檔影片上傳失敗：" & errMsg
+                -- 不再直接拋出錯誤，繼續執行
             end try
             
-            my writeLog("SUCCESS", "所有影片檔案上傳完成")
+            -- 無論上傳是否成功，都嘗試創建 Trello 卡片
+            try
+                my createTrelloCard(fileBaseName, trelloAPIKey, trelloToken, trelloListID, templateCardID)
+            on error errMsg
+                my writeLog("ERROR", "創建 Trello 卡片失敗：" & errMsg)
+            end try
             
-            -- 創建 Trello 卡片
-            my createTrelloCard(fileBaseName, trelloAPIKey, trelloToken, trelloListID, templateCardID)
+            -- 如果上傳失敗，最後才拋出錯誤
+            if not uploadSuccess then
+                error "轉檔影片上傳失敗"
+            end if
+            
+            my writeLog("SUCCESS", "所有影片檔案上傳完成")
             
             my writeLog("SUCCESS", "影片處理完成：" & fileName)
             
