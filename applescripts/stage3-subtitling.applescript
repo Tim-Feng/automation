@@ -355,7 +355,7 @@ on run {input, parameters}
                     "-H 'Authorization: Bearer " & accessToken & "'"
                 
                 set fuzzyResponse to do shell script fuzzySearchCmd
-                set folderId to do shell script "echo " & quoted form of folderResponse & " | python3 -c \"import sys, json; arr=json.load(sys.stdin).get('files', []); print(arr[0]['id'] if arr else '')\""
+                set folderId to do shell script "echo " & quoted form of fuzzyResponse & " | python3 -c \"import sys, json; arr=json.load(sys.stdin).get('files', []); print(arr[0]['id'] if arr else '')\""
             end if
 
             -- 如果找不到資料夾，記錄錯誤
