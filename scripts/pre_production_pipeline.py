@@ -170,8 +170,16 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
         # 4) 如果啟用 WordPress，建立草稿
         if ENABLE_WORDPRESS:
             try:
-                # 使用新的 WordPress API
-                draft_content = f"這是 {title} 的介紹影片。"
+                # 使用 Perplexity API 生成內容
+                from perplexity_client import PerplexityClient
+                perplexity = PerplexityClient()
+                draft_content = perplexity.search(title)
+
+                # 如果沒有成功獲取內容，使用預設內容
+                if not draft_content:
+                    logger.warning(f"Perplexity API 未返回內容，使用預設內容")
+                    draft_content = f"這是 {title} 的介紹影片。"
+
                 featured_tag = [136]  # "featured" 標籤的 ID
                 
                 result = wp.create_draft(
@@ -199,21 +207,23 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                     'range': f'J{row_index}',
                     'values': [['error']]
                 })
-                raise
+                raise wp_error
 
-        # 5) 全部成功才更新狀態為 done
+        # 5) 更新狀態為完成
         updates.append({
             'range': f'J{row_index}',
             'values': [['done']]
         })
 
+        return True
+
     except Exception as e:
-        logger.error(f"處理影片 ID {assigned_id} 時發生錯誤: {e}")
+        logger.error(f"處理失敗: {str(e)}")
         updates.append({
             'range': f'J{row_index}',
             'values': [['error']]
         })
-        raise
+        raise e
 
 def check_pending_and_process(sheet):
     """主要處理邏輯"""
