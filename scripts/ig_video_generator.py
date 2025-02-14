@@ -6,10 +6,22 @@ import logging
 import os
 import re
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+# 設定日誌輸出到文件
+log_file = '/tmp/ig_video_generator.log'
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()  # 同時輸出到終端
+    ]
+)
 logger = logging.getLogger(__name__)
 
 def generate_ig_video(input_video, output_path, texts, font_path):
+    logger.debug(f"開始處理影片：{input_video}")
+    logger.debug(f"輸出路徑：{output_path}")
+    logger.debug(f"文字內容：{texts}")
     filter_complex = (
         f"[0:v]scale=1920:3414:force_original_aspect_ratio=decrease,pad=1920:3414:(ow-iw)/2:(oh-ih)/2[scaled];"
         f"[scaled]drawtext=fontfile='{font_path}':text='{texts[0]}':fontcolor=black:fontsize=188:"
@@ -42,12 +54,18 @@ def generate_ig_video(input_video, output_path, texts, font_path):
 
 def get_video_id(input_path: str) -> str:
     """從輸入路徑中提取影片 ID"""
-    # 從檔名中提取基本 ID（移除尺寸和語言標記）
     filename = Path(input_path).stem
-    # 符合類似 "5403-1920*1340-zh" 的模式
-    match = re.match(r'^(\d+)(?:-\d+\*\d+)?(?:-[a-z]+)?$', filename)
-    if match:
-        return match.group(1)
+    
+    # 先檢查是否為範圍或組合影片
+    range_match = re.match(r'^(\d+[-+]\d+)-\d+\*\d+(?:-[a-z]+)?$', filename)
+    if range_match:
+        return range_match.group(1)
+    
+    # 如果不是範圍或組合影片，則檢查是否為單支影片
+    single_match = re.match(r'^(\d+)-\d+\*\d+(?:-[a-z]+)?$', filename)
+    if single_match:
+        return single_match.group(1)
+    
     return filename
 
 def main():

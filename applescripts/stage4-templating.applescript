@@ -167,9 +167,15 @@ on run {input, parameters}
                     " " & quoted form of secondText & ¬
                     " " & quoted form of thirdText & ¬
                     " --output_dir " & quoted form of movieDirectory
-
-                do shell script videoCommand
-                my writeLog("SUCCESS", "影片產生完成")
+                
+                my writeLog("DEBUG", "執行指令：" & videoCommand)
+                try
+                    do shell script videoCommand
+                    my writeLog("SUCCESS", "影片產生完成")
+                on error errMsg
+                    my writeLog("ERROR", "影片產生失敗：" & errMsg)
+                    error "影片產生失敗：" & errMsg
+                end try
                 
                 set pythonPath to "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3"
                 set driveScriptPath to "/Users/Mac/GitHub/automation/scripts/google_drive.py"
