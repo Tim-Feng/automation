@@ -43,12 +43,13 @@ flowchart TB
     end
 
     subgraph "4️⃣ IG 模板套用"
-        D[stage4-ig.applescript] -->|讀取資料| D1[從 Google Docs 讀取文案]
-        D1 --> D2[使用 FFmpeg 套用模板]
-        D2 --> D3[輸出成品]
-        D -->|使用| DA[ffmpeg_video_generator.py]
-        D -->|使用| DB[ffmpeg_cover_generator.py]
+        D[stage4-templating.applescript] -->|讀取資料| D1[從 Google Docs 讀取文案]
+        D1 --> D2[使用 FFmpeg 產生影片和封面]
+        D2 --> D3[上傳至 Google Drive]
+        D -->|使用| DA[ig_video_generator.py]
+        D -->|使用| DB[ig_cover_generator.py]
         D -->|使用| DC[logger.py]
+        D -->|使用| DD[google_drive.py]
         DC -->|統一日誌系統| DCL[log_bridge.py]
     end
 
@@ -64,5 +65,5 @@ flowchart TB
     
     class A,B,C,D mainScript;
     class A1,A2,A3,B1,B2,B3,B4,B5,B6,C1,C2,C3,C4,C5,C6,C7,C8,D1,D2,D3 subProcess;
-    class AA,AB,AC,BA,BB,BC,BD,CA,CB,CC,CD,CE,CF,DA,DB,DC utility;
+    class AA,AB,AC,BA,BB,BC,BD,CA,CB,CC,CD,CE,CF,DA,DB,DC,DD utility;
     class ACL,BCL,CEL,DCL logger;
