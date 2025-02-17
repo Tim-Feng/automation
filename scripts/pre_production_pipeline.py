@@ -180,7 +180,17 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                     logger.warning(f"Perplexity API 未返回內容，使用預設內容")
                     draft_content = f"這是 {title} 的介紹影片。"
 
-                featured_tag = [136]  # "featured" 標籤的 ID
+                # 使用 TagSuggester 生成標籤
+                from tag_suggestion import TagSuggester
+                tag_suggester = TagSuggester()
+                tags = tag_suggester.suggest_tags(title=title, content=draft_content)
+                
+                if not tags:
+                    logger.warning(f"無法生成標籤建議，使用預設標籤")
+                    featured_tag = [136]  # "featured" 標籤的 ID
+                else:
+                    # 將 Assistant 返回的標籤轉換為 WordPress 標籤 ID
+                    featured_tag = wp.convert_tags_to_ids(tags)
                 
                 result = wp.create_draft(
                     title=title,

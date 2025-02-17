@@ -3,10 +3,12 @@
 
 import os
 import re
+import json
 import requests
 from requests.auth import HTTPBasicAuth
 from typing import Optional, List, Dict, Union
 from pathlib import Path
+from datetime import datetime, timedelta
 
 class WordPressAPI:
 
@@ -19,7 +21,7 @@ class WordPressAPI:
             os.getenv("WP_USERNAME"),
             os.getenv("WP_APP_PASSWORD")
         )
-        
+
     def create_draft(
         self,
         title: str,
@@ -45,6 +47,7 @@ class WordPressAPI:
         
         if video_tag:
             data['video_tag'] = video_tag
+            self.logger.info(f"設置標籤: {video_tag}")  # 添加日誌
             
         try:
             response = requests.post(endpoint, auth=self.auth, json=data)
@@ -53,7 +56,23 @@ class WordPressAPI:
                 self.logger.error(f"建立草稿失敗 - Status: {response.status_code}, Response: {response.text}")
                 return None
                 
-            return response.json()
+            result = response.json()
+            
+            # 如果有標籤但回應中沒有標籤，嘗試再次更新
+            if video_tag and 'video_tag' not in result:
+                self.logger.info("標籤可能未設置成功，嘗試更新文章...")
+                update_response = requests.post(
+                    f"{endpoint}/{result['id']}",
+                    auth=self.auth,
+                    json={'video_tag': video_tag}
+                )
+                if update_response.status_code == 200:
+                    result = update_response.json()
+                    self.logger.info("標籤更新成功")
+                else:
+                    self.logger.error(f"標籤更新失敗 - Status: {update_response.status_code}")
+            
+            return result
             
         except Exception as e:
             self.logger.error(f"建立草稿時發生錯誤: {str(e)}")
@@ -183,3 +202,42 @@ class WordPressAPI:
         except Exception as e:
             self.logger.error(f"搜尋文章時發生錯誤: {str(e)}")
             return None
+            
+    def convert_tags_to_ids(self, tags: Dict) -> List[int]:
+        """將 Assistant 返回的標籤轉換為 WordPress 標籤 ID"""
+        tag_ids = []
+        
+        # 載入本地標籤文件
+        tags_file = Path(__file__).parent.parent / 'docs' / 'tags.json'
+        with open(tags_file, 'r', encoding='utf-8') as f:
+            local_tags = json.load(f)
+            
+        # 遍歷所有類別和子類別
+        for category in tags.values():
+            for subcategory in category:
+                for tag in category[subcategory]:
+                    if isinstance(tag, dict) and 'wp_id' in tag:
+                        tag_ids.append(tag['wp_id'])
+                        
+        return list(set(tag_ids))  # 移除重複的 ID
+
+    def create_tag(self, name):
+        """創建新標籤，如果標籤已存在則返回現有標籤的 ID"""
+        endpoint = f"{self.api_base}/video_tag"
+        response = requests.post(
+            endpoint,
+            auth=self.auth,
+            json={'name': name}
+        )
+        
+        if response.status_code == 201:
+            return response.json()['id']
+        elif response.status_code == 400:
+            error_data = response.json()
+            if error_data.get('code') == 'term_exists':
+                # 如果標籤已存在，返回現有標籤的 ID
+                return error_data['data']['term_id']
+            else:
+                raise Exception(f"創建標籤失敗: {response.status_code} - {response.text}")
+        else:
+            raise Exception(f"創建標籤失敗: {response.status_code} - {response.text}")
