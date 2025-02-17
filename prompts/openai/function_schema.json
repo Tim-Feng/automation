@@ -1,0 +1,374 @@
+{
+    "version": "1.0.0",
+    "description": "用於 OpenAI Assistant 的 function schema 定義",
+    "functions": [
+        {
+            "name": "suggest_tags",
+            "description": "根據提供的影片標題和內容，生成標籤建議",
+            "strict": false,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "existing_tags": {
+                        "type": "object",
+                        "required": ["tags", "categories"],
+                        "properties": {
+                            "tags": {
+                                "type": "object",
+                                "required": ["人", "事", "時", "地", "物"],
+                                "properties": {
+                                    "人": {
+                                        "type": "object",
+                                        "required": ["名人", "職業", "身份", "關聯/關係"],
+                                        "properties": {
+                                            "名人": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "職業": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "身份": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "關聯/關係": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "事": {
+                                        "type": "object",
+                                        "required": ["公共議題", "活動", "運動", "狀態/心態"],
+                                        "properties": {
+                                            "公共議題": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "活動": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "運動": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "狀態/心態": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "時": {
+                                        "type": "object",
+                                        "required": ["背景年代", "特殊時長區間", "年度節日", "特殊時間點"],
+                                        "properties": {
+                                            "背景年代": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "特殊時長區間": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "年度節日": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "特殊時間點": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "地": {
+                                        "type": "object",
+                                        "required": ["國家", "地名", "地點", "情境場域"],
+                                        "properties": {
+                                            "國家": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "地名": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "地點": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "情境場域": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "物": {
+                                        "type": "object",
+                                        "required": ["品牌/組織", "產品 - 名稱", "關鍵記憶點"],
+                                        "properties": {
+                                            "品牌/組織": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "產品 - 名稱": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "關鍵記憶點": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "categories": {
+                                "type": "object",
+                                "required": ["類型", "性質", "技術手法"],
+                                "properties": {
+                                    "類型": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "性質": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "技術手法": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "new_tag_suggestions": {
+                        "type": "object",
+                        "required": ["tags", "categories", "reasoning"],
+                        "properties": {
+                            "tags": {
+                                "type": "object",
+                                "properties": {
+                                    "人": {
+                                        "type": "object",
+                                        "properties": {
+                                            "名人": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "職業": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "身份": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "關聯/關係": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "事": {
+                                        "type": "object",
+                                        "properties": {
+                                            "公共議題": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "活動": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "運動": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "狀態/心態": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "時": {
+                                        "type": "object",
+                                        "properties": {
+                                            "背景年代": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "特殊時長區間": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "年度節日": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "特殊時間點": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "地": {
+                                        "type": "object",
+                                        "properties": {
+                                            "國家": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "地名": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "地點": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "情境場域": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    },
+                                    "物": {
+                                        "type": "object",
+                                        "properties": {
+                                            "品牌/組織": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "產品 - 名稱": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            },
+                                            "關鍵記憶點": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "categories": {
+                                "type": "object",
+                                "properties": {
+                                    "類型": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "性質": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "技術手法": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            },
+                            "reasoning": {
+                                "type": "object",
+                                "description": "每個新標籤建議的理由說明"
+                            }
+                        }
+                    }
+                },
+                "required": ["existing_tags", "new_tag_suggestions"]
+            }
+        }
+    ]
+}

@@ -25,8 +25,6 @@ format_strategies = [
 
 def get_video_metadata(youtube_url, max_retries=3):
     """使用 yt_dlp 擷取影片標題和時長"""
-    logger.info(f"擷取影片資訊: {youtube_url}")
-    
     for attempt in range(max_retries):
         try:
             ydl_opts = {
@@ -48,7 +46,6 @@ def get_video_metadata(youtube_url, max_retries=3):
                 minutes, seconds = divmod(duration, 60)
                 formatted_duration = f"{int(minutes)}:{int(seconds):02}"
                 
-                logger.info(f"影片標題: {title}, 時長: {formatted_duration}")
                 return title, formatted_duration
                 
         except Exception as e:
@@ -156,6 +153,9 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
 
         # 2) 取得標題 / 時長
         title, length = get_video_metadata(youtube_url)
+        logger.info(f"取得影片 {assigned_id} 資訊成功")
+        logger.debug(f"標題: {title}")
+        logger.debug(f"時長: {length}")
 
         # 3) 更新試算表 B/E 欄
         updates.append({
@@ -185,19 +185,28 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                 tag_suggester = TagSuggester()
                 tags = tag_suggester.suggest_tags(title=title, content=draft_content)
                 
-                if not tags:
-                    logger.warning(f"無法生成標籤建議，使用預設標籤")
-                    featured_tag = [136]  # "featured" 標籤的 ID
-                else:
+                # 初始化標籤列表，始終包含 featured 標籤
+                tag_ids = [136]  # "featured" 標籤的 ID
+                
+                if tags:
                     # 將 Assistant 返回的標籤轉換為 WordPress 標籤 ID
-                    featured_tag = wp.convert_tags_to_ids(tags)
+                    additional_tags = wp.convert_tags_to_ids(tags)
+                    if additional_tags:
+                        tag_ids.extend(additional_tags)
+                    else:
+                        logger.warning("無法建立標籤，僅使用 featured 標籤")
+                else:
+                    logger.warning("無法生成標籤建議，僅使用 featured 標籤")
+                
+                # 移除重複的標籤 ID 並設置
+                tag_ids = list(set(tag_ids))
                 
                 result = wp.create_draft(
                     title=title,
                     content=draft_content,
                     video_url=youtube_url,
                     video_length=length,
-                    video_tag=featured_tag
+                    video_tag=tag_ids
                 )
                 
                 # 取得草稿連結並更新到 H 欄

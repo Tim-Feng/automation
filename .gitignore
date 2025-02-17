@@ -15,3 +15,6 @@ config/service_account.json
 __pycache__/
 *.pyc
 *.pyo
+
+# 動態生成的數據文件
+docs/tags.json

@@ -3,9 +3,12 @@ flowchart TB
         A[stage1-preparation.applescript] -->|自動化處理| A1[從 Google Sheets 擷取資訊]
         A1 --> A2[下載 YouTube 影片]
         A2 --> A3[建立 WordPress 草稿]
+        A3 --> A4[使用 OpenAI 生成標籤]
         A -->|使用| AA[google_sheets.py]
         A -->|使用| AB[wordpress_api.py]
         A -->|使用| AC[logger.py]
+        A -->|使用| AD[tag_suggestion.py]
+        A -->|使用| AE[perplexity_client.py]
         AC -->|統一日誌系統| ACL[log_bridge.py]
     end
 
@@ -64,6 +67,6 @@ flowchart TB
     classDef logger fill:#cfc,stroke:#333,stroke-width:1px;
     
     class A,B,C,D mainScript;
-    class A1,A2,A3,B1,B2,B3,B4,B5,B6,C1,C2,C3,C4,C5,C6,C7,C8,D1,D2,D3 subProcess;
-    class AA,AB,AC,BA,BB,BC,BD,CA,CB,CC,CD,CE,CF,DA,DB,DC,DD utility;
+    class A1,A2,A3,A4,B1,B2,B3,B4,B5,B6,C1,C2,C3,C4,C5,C6,C7,C8,D1,D2,D3 subProcess;
+    class AA,AB,AC,AD,AE,BA,BB,BC,BD,CA,CB,CC,CD,CE,CF,DA,DB,DC,DD utility;
     class ACL,BCL,CEL,DCL logger;

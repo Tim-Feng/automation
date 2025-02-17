@@ -4,13 +4,8 @@ import os
 import json
 import requests
 import re
-from typing import Optional, Dict, Any
-from dotenv import load_dotenv
-from logger import get_workflow_logger
 from opencc import OpenCC
-
-# 載入 .env 檔案
-load_dotenv('config/.env')
+from logger import get_workflow_logger
 
 logger = get_workflow_logger('1', 'perplexity_client')
 
@@ -60,7 +55,7 @@ class PerplexityClient:
         
         return '\n\n'.join(formatted_content)
 
-    def search(self, title: str) -> Optional[str]:
+    def search(self, title: str) -> str:
         """使用影片標題進行搜索並返回格式化的內容"""
         prompt = f"""請想像這是一個專業廣告影片平台的作品介紹，需要吸引觀眾又傳達重要資訊。所有資訊必須準確且有來源依據，並使用流暢的敘事方式，描述以下這支廣告影片：
 
@@ -121,7 +116,7 @@ class PerplexityClient:
             response_data = response.json()
             formatted_content = self.format_response(response_data['choices'][0]['message']['content'])
             
-            logger.info(f"成功獲取並格式化「{title}」的相關資訊")
+            logger.debug(f"成功獲取並格式化「{title}」的相關資訊")
             return formatted_content
 
         except Exception as e:

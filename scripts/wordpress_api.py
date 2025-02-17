@@ -47,7 +47,6 @@ class WordPressAPI:
         
         if video_tag:
             data['video_tag'] = video_tag
-            self.logger.info(f"設置標籤: {video_tag}")  # 添加日誌
             
         try:
             response = requests.post(endpoint, auth=self.auth, json=data)
@@ -206,21 +205,45 @@ class WordPressAPI:
     def convert_tags_to_ids(self, tags: Dict) -> List[int]:
         """將 Assistant 返回的標籤轉換為 WordPress 標籤 ID"""
         tag_ids = []
+        processed_tags = set()  # 用於追蹤已處理的標籤
         
-        # 載入本地標籤文件
-        tags_file = Path(__file__).parent.parent / 'docs' / 'tags.json'
-        with open(tags_file, 'r', encoding='utf-8') as f:
-            local_tags = json.load(f)
+        try:
+            # 檢查是否有 existing_tags
+            if "existing_tags" in tags:
+                existing_tags = tags["existing_tags"]
+                
+                # 處理 categories 和 tags
+                for tag_type, tag_groups in existing_tags.items():
+                    if isinstance(tag_groups, dict):
+                        for group_name, group_data in tag_groups.items():
+                            if isinstance(group_data, dict):
+                                for subgroup_name, values in group_data.items():
+                                    if isinstance(values, list):
+                                        for value in values:
+                                            if value not in processed_tags:
+                                                processed_tags.add(value)
+                                                tag_id = self.create_tag(value)
+                                                if tag_id:
+                                                    tag_ids.append(tag_id)
+                                                    self.logger.debug(f"建立標籤: {value} -> ID: {tag_id}")
+                            elif isinstance(group_data, list):
+                                for value in group_data:
+                                    if value not in processed_tags:
+                                        processed_tags.add(value)
+                                        tag_id = self.create_tag(value)
+                                        if tag_id:
+                                            tag_ids.append(tag_id)
+                                            self.logger.debug(f"建立標籤: {value} -> ID: {tag_id}")
             
-        # 遍歷所有類別和子類別
-        for category in tags.values():
-            for subcategory in category:
-                for tag in category[subcategory]:
-                    if isinstance(tag, dict) and 'wp_id' in tag:
-                        tag_ids.append(tag['wp_id'])
-                        
-        return list(set(tag_ids))  # 移除重複的 ID
-
+            if not tag_ids:
+                self.logger.warning("沒有成功處理任何標籤")
+                
+            return list(set(tag_ids))  # 確保返回的 ID 列表沒有重複
+            
+        except Exception as e:
+            self.logger.error(f"轉換標籤時發生錯誤: {str(e)}")
+            return []
+            
     def create_tag(self, name):
         """創建新標籤，如果標籤已存在則返回現有標籤的 ID"""
         endpoint = f"{self.api_base}/video_tag"
