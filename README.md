@@ -1,21 +1,63 @@
 # Automation Scripts
 
-這個倉庫包含各種自動化腳本，用於處理日常工作流程。
+這個倉庫包含各種自動化腳本，用於處理影片製作和發布的工作流程。
 
 ## 功能列表
 
-### 1. WordPress 內容管理
+### 1. 前製作業 (Pre-production)
+- 腳本：`scripts/pre_production_pipeline.py`
+- 功能：處理影片前製作業，包括下載、剪輯和格式轉換等
+
+### 2. 影片處理
+#### 智慧裁切
+- 腳本：`scripts/face_center_crop.py`
+- 功能：使用人臉檢測進行智慧裁切，適用於垂直影片
+- 類別：`SmartImageProcessor`
+
+#### Instagram 相關
+- 腳本：
+  - `scripts/ig_video_generator.py`：生成 Instagram 格式的影片
+  - `scripts/ig_cover_generator.py`：生成 Instagram 封面圖
+
+### 3. 字幕處理
+- 腳本：
+  - `scripts/subtitle_splitter.py`：分割字幕檔案
+  - `scripts/srt_to_ass_with_style.py`：將 SRT 轉換為帶樣式的 ASS
+  - `scripts/add_spaces.py`：在中英文之間添加空格
+  - `scripts/upload_vtt.py`：上傳 VTT 字幕到 WordPress
+
+### 4. WordPress 內容管理
+#### API 客戶端
+- 腳本：`scripts/wordpress_api.py`
+- 類別：`WordPressAPI`
+- 功能：處理 WordPress API 相關操作，包括建立草稿、上傳媒體等
 
 #### 批次更新草稿 (Archived)
-- 腳本：`scripts/batch_update_drafts.py`
-- 功能：從 Google Sheets 讀取影片資訊，使用 AI 生成內容和標籤，並更新 WordPress 草稿
+- 腳本：`scripts/batch_update_drafts.py`（已存檔）
+- 功能：從 Google Sheets 讀取影片資訊，使用 AI 生成內容和標籤
 - 狀態：已存檔，代碼可在 MEMORIES 中找到
-- 使用場景：當需要批次處理多個 WordPress 草稿時
-- 依賴：
-  - Google Sheets API
-  - Perplexity API
-  - OpenAI API
-  - WordPress API
+
+### 5. AI 整合
+#### Perplexity API
+- 腳本：`scripts/perplexity_client.py`
+- 類別：`PerplexityClient`
+- 功能：使用 Perplexity API 生成內容
+
+#### 標籤生成
+- 腳本：`scripts/tag_suggestion.py`
+- 類別：`TagSuggester`
+- 功能：使用 OpenAI Assistant 生成標籤
+
+### 6. Google 服務整合
+- 腳本：
+  - `scripts/google_sheets.py`：Google Sheets 操作
+  - `scripts/google_drive.py`：Google Drive 檔案管理
+
+### 7. 工具類
+#### 日誌系統
+- 腳本：
+  - `scripts/logger.py`：工作流程日誌系統
+  - `scripts/log_bridge.py`：日誌橋接器
 
 ## 開發指南
 
@@ -39,7 +81,34 @@ OPENAI_API_KEY=your_api_key
 - WordPress API 重試機制：參考 MEMORIES 中的實現方案
 - 批次更新草稿：參考 MEMORIES 中的完整代碼
 
+## 專案結構
+```
+automation/
+├── config/
+│   ├── .env                 # 環境變數
+│   └── service_account.json # Google API 憑證
+├── scripts/
+│   ├── pre_production_pipeline.py
+│   ├── face_center_crop.py
+│   ├── ig_video_generator.py
+│   ├── ig_cover_generator.py
+│   ├── subtitle_splitter.py
+│   ├── srt_to_ass_with_style.py
+│   ├── add_spaces.py
+│   ├── upload_vtt.py
+│   ├── wordpress_api.py
+│   ├── perplexity_client.py
+│   ├── tag_suggestion.py
+│   ├── google_sheets.py
+│   ├── google_drive.py
+│   ├── logger.py
+│   └── log_bridge.py
+└── README.md
+```
+
 ## 注意事項
 1. 所有敏感資訊都應該存放在 `config/.env` 檔案中
 2. 重要的代碼實現都會保存在 MEMORIES 中，方便日後參考和重用
 3. 使用 Python 3.8 或更高版本
+4. 每個腳本都有獨立的日誌記錄，方便追蹤問題
+5. 大部分腳本都支援命令行參數，使用 `-h` 或 `--help` 查看用法
