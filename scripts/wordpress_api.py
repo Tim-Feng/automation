@@ -4,7 +4,6 @@
 import os
 import re
 import json
-import time
 import requests
 import yt_dlp
 from requests.auth import HTTPBasicAuth
@@ -26,94 +25,6 @@ class WordPressAPI:
             os.getenv("WP_APP_PASSWORD")
         )
 
-    def get_thumbnail_url(self, video_url: str) -> Optional[str]:
-        """從 YouTube 影片 URL 獲取縮圖"""
-        try:
-            ydl_opts = {
-                'quiet': True,
-                'no_warnings': True,
-                'extract_flat': True
-            }
-            
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(video_url, download=False)
-                if 'thumbnail' in info:
-                    return info['thumbnail']
-                    
-            return None
-        except Exception as e:
-            self.logger.error(f"獲取影片縮圖失敗: {str(e)}")
-            return None
-
-    def compress_image(self, image_data: bytes, max_size: int = 1024, quality: int = 85) -> bytes:
-        """壓縮圖片
-        
-        Args:
-            image_data: 原始圖片資料
-            max_size: 最大尺寸（寬度或高度）
-            quality: JPEG 壓縮品質 (1-100)
-            
-        Returns:
-            bytes: 壓縮後的圖片資料
-        """
-        try:
-            # 從二進位資料讀取圖片
-            img = Image.open(BytesIO(image_data))
-            
-            # 轉換為 RGB 模式（如果是 RGBA）
-            if img.mode in ('RGBA', 'LA'):
-                background = Image.new('RGB', img.size, (255, 255, 255))
-                background.paste(img, mask=img.split()[-1])
-                img = background
-            
-            # 調整大小
-            if max(img.size) > max_size:
-                ratio = max_size / max(img.size)
-                new_size = tuple(int(dim * ratio) for dim in img.size)
-                img = img.resize(new_size, Image.Resampling.LANCZOS)
-            
-            # 儲存壓縮後的圖片
-            output = BytesIO()
-            img.save(output, format='JPEG', quality=quality, optimize=True)
-            
-            return output.getvalue()
-            
-        except Exception as e:
-            self.logger.error(f"壓縮圖片時發生錯誤: {str(e)}")
-            return image_data  # 如果壓縮失敗，返回原始資料
-
-    def download_thumbnail(self, thumbnail_url: str) -> Optional[str]:
-        """下載並壓縮縮圖到暫存目錄"""
-        try:
-            import tempfile
-            import requests
-            from pathlib import Path
-            
-            # 建立暫存目錄
-            temp_dir = Path(tempfile.gettempdir()) / "wp_thumbnails"
-            temp_dir.mkdir(exist_ok=True)
-            
-            # 下載縮圖
-            response = requests.get(thumbnail_url)
-            if response.status_code == 200:
-                # 壓縮圖片
-                compressed_data = self.compress_image(
-                    response.content,
-                    max_size=1024,  # 最大 1024px
-                    quality=85      # 85% 品質
-                )
-                
-                # 儲存檔案
-                temp_file = temp_dir / f"thumbnail_{int(time.time())}.jpg"
-                with open(temp_file, 'wb') as f:
-                    f.write(compressed_data)
-                    
-                return str(temp_file)
-            return None
-        except Exception as e:
-            self.logger.error(f"下載縮圖失敗: {str(e)}")
-            return None
-
     def create_draft(
         self,
         title: str,
@@ -121,6 +32,7 @@ class WordPressAPI:
         video_url: str,
         video_length: str = "",
         video_tag: Optional[List[int]] = None,
+        video_id: str = None,
     ) -> Dict:
         """建立影片草稿"""
         endpoint = f"{self.api_base}/video"
@@ -141,7 +53,24 @@ class WordPressAPI:
             data['video_tag'] = video_tag
             
         try:
-            # 1. 先建立草稿
+            # 如果有提供影片 ID，嘗試下載並上傳縮圖
+            if video_id:
+                thumbnail_url = self.get_thumbnail_url(video_id)
+                if thumbnail_url:
+                    # 下載縮圖
+                    image_data = self.download_thumbnail(thumbnail_url)
+                    if image_data:
+                        # 壓縮圖片
+                        compressed_data = self.compress_image(image_data)
+                        
+                        # 上傳縮圖
+                        media = self.upload_media(
+                            file_data=compressed_data,
+                            filename=f"{video_id}-thumbnail.jpg"
+                        )
+                        if media and 'id' in media:
+                            data['featured_media'] = media['id']
+
             response = requests.post(endpoint, auth=self.auth, json=data)
             
             if response.status_code != 201:
@@ -149,36 +78,12 @@ class WordPressAPI:
                 return None
                 
             result = response.json()
-            post_id = result['id']
             
-            # 2. 處理縮圖
-            if 'youtube.com' in video_url or 'youtu.be' in video_url:
-                # 獲取並下載縮圖
-                thumbnail_url = self.get_thumbnail_url(video_url)
-                if thumbnail_url:
-                    thumbnail_path = self.download_thumbnail(thumbnail_url)
-                    if thumbnail_path:
-                        # 上傳縮圖
-                        media_result = self.upload_media(thumbnail_path, post_id)
-                        if media_result:
-                            # 設定特色圖片
-                            self.logger.info(f"設定文章 {post_id} 的特色圖片: {media_result['id']}")
-                            update_response = requests.post(
-                                f"{endpoint}/{post_id}",
-                                auth=self.auth,
-                                json={'featured_media': media_result['id']}
-                            )
-                            if update_response.status_code != 200:
-                                self.logger.error(f"設定特色圖片失敗 - Status: {update_response.status_code}")
-                            
-                        # 刪除暫存檔案
-                        os.unlink(thumbnail_path)
-            
-            # 3. 如果有標籤但回應中沒有標籤，嘗試再次更新
+            # 如果有標籤但回應中沒有標籤，嘗試再次更新
             if video_tag and 'video_tag' not in result:
                 self.logger.info("標籤可能未設置成功，嘗試更新文章...")
                 update_response = requests.post(
-                    f"{endpoint}/{post_id}",
+                    f"{endpoint}/{result['id']}",
                     auth=self.auth,
                     json={'video_tag': video_tag}
                 )
@@ -193,104 +98,254 @@ class WordPressAPI:
         except Exception as e:
             self.logger.error(f"建立草稿時發生錯誤: {str(e)}")
             return None
-
-    def upload_media(self, file_path: Union[str, Path], post_id: Optional[int] = None) -> Dict:
+            
+    def upload_media(self, file_data: Union[str, Path, bytes], filename: Optional[str] = None, post_id: Optional[int] = None) -> Optional[Dict]:
         """上傳媒體檔案到 WordPress
         
         Args:
-            file_path: 檔案路徑
+            file_data: 檔案路徑或二進制數據
+            filename: 如果 file_data 是二進制數據，需要提供檔案名
             post_id: 關聯的文章 ID（可選）
             
         Returns:
             Dict: 上傳結果
         """
-        file_path = Path(file_path)
-        if not file_path.exists():
-            raise FileNotFoundError(f"找不到檔案: {file_path}")
-            
-        # 準備上傳資料
-        endpoint = f"{self.api_base}/media"
-        files = {
-            'file': (
-                file_path.name,
-                open(file_path, 'rb'),
-                'text/vtt' if file_path.suffix.lower() == '.vtt' else None
-            )
-        }
-        
-        data = {'title': file_path.stem}
-        if post_id:
-            data['post'] = post_id
-            
         try:
-            # 上傳檔案
+            endpoint = f"{self.api_base}/media"
+            headers = {}
+            
+            if isinstance(file_data, (str, Path)):
+                # 如果是檔案路徑
+                files = {
+                    'file': open(file_data, 'rb')
+                }
+                if post_id:
+                    headers['post'] = str(post_id)
+            else:
+                # 如果是二進制數據
+                if not filename:
+                    raise ValueError("當上傳二進制數據時必須提供檔案名")
+                files = {
+                    'file': (filename, file_data, 'image/jpeg')
+                }
+            
             response = requests.post(
                 endpoint,
-                auth=self.auth,
+                headers=headers,
                 files=files,
-                data=data
+                auth=self.auth
             )
             
-            if response.status_code not in (201, 200):
-                self.logger.error(f"文章 {post_id} 的檔案 {file_path.name} 上傳失敗 - Status: {response.status_code}, Response: {response.text}")
+            if response.status_code in [201, 200]:
+                return response.json()
+            else:
+                self.logger.error(f"上傳媒體失敗: {response.status_code} - {response.text}")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"上傳媒體時發生錯誤: {str(e)}")
+            return None
+            
+    def upload_vtt(self, post_id: int, vtt_path: Union[str, Path]) -> Dict:
+        """上傳 VTT 字幕檔案，並更新文章的字幕設定
+        
+        Args:
+            post_id: 文章 ID
+            vtt_path: 字幕檔案路徑
+            
+        Returns:
+            Dict: 上傳結果
+        """
+        vtt_path = Path(vtt_path)
+        if not vtt_path.exists():
+            raise FileNotFoundError(f"找不到字幕檔案: {vtt_path}")
+            
+        # 上傳字幕檔案
+        upload_result = self.upload_media(vtt_path, post_id)
+        if not upload_result:
+            return None
+            
+        # 從上傳結果中取得字幕 URL
+        subtitle_url = upload_result.get('source_url')
+        if not subtitle_url:
+            self.logger.error(f"文章 {post_id} 的字幕上傳成功，但無法取得字幕 URL")
+            return None
+            
+        # 從檔名判斷語系
+        lang = vtt_path.stem.split('-')[-1]
+        
+        # 更新文章的字幕設定
+        endpoint = f"{self.api_base}/video/{post_id}"
+        data = {
+            'meta': {
+                'text_tracks': {
+                    'languages': [lang],
+                    'sources': [subtitle_url],
+                    'action': ''
+                }
+            }
+        }
+        
+        try:
+            response = requests.post(endpoint, auth=self.auth, json=data)
+            
+            if response.status_code not in (200, 201):
+                self.logger.error(f"文章 {post_id} 的字幕設定更新失敗 - Status: {response.status_code}, Response: {response.text}")
                 return None
                 
             return response.json()
             
         except Exception as e:
-            self.logger.error(f"文章 {post_id} 的檔案 {file_path.name} 上傳時發生錯誤: {str(e)}")
+            self.logger.error(f"文章 {post_id} 的字幕設定更新時發生錯誤: {str(e)}")
             return None
-
-    def upload_featured_image(self, post_id: int, file_path: Union[str, Path]):
-        """上傳特色圖片到 WordPress
-        
-        Args:
-            post_id: 文章 ID
-            file_path: 檔案路徑
-        """
-        try:
-            # 上傳檔案
-            media_result = self.upload_media(file_path, post_id)
             
-            if media_result:
-                # 設定特色圖片
-                self.logger.info(f"設定文章 {post_id} 的特色圖片: {media_result['id']}")
-                update_response = requests.post(
-                    f"{self.api_base}/video/{post_id}",  # 使用 video 端點
-                    auth=self.auth,
-                    json={'featured_media': media_result['id']}
-                )
-                if update_response.status_code != 200:
-                    self.logger.error(f"設定特色圖片失敗 - Status: {update_response.status_code}, Response: {update_response.text}")
-                    return False
-                return True
-                    
-        except Exception as e:
-            self.logger.error(f"上傳特色圖片時發生錯誤: {str(e)}")
-            return False
-
-    def has_featured_image(self, post_id: int) -> bool:
-        """檢查文章是否已有特色圖片
+    def get_post_id_by_title(self, title: str) -> Union[int, None]:
+        """根據標題取得文章 ID"""
+        endpoint = f"{self.api_base}/video"
+        params = {
+            'search': title,
+            'per_page': 1
+        }
         
-        Args:
-            post_id (int): 文章 ID
-            
-        Returns:
-            bool: 是否已有特色圖片
-        """
         try:
-            response = requests.get(
-                f"{self.api_base}/posts/{post_id}",
-                auth=self.auth,
-                params={'_fields': 'featured_media'}
-            )
+            response = requests.get(endpoint, auth=self.auth, params=params)
             
             if response.status_code != 200:
-                self.logger.error(f"檢查特色圖片失敗 - Status: {response.status_code}")
-                return False
+                self.logger.error(f"搜尋文章失敗 - Status: {response.status_code}, Response: {response.text}")
+                return None
                 
-            return bool(response.json().get('featured_media'))
+            results = response.json()
+            if not results:
+                return None
+                
+            return results[0]['id']
             
         except Exception as e:
-            self.logger.error(f"檢查特色圖片時發生錯誤: {str(e)}")
-            return False
+            self.logger.error(f"搜尋文章時發生錯誤: {str(e)}")
+            return None
+            
+    def convert_tags_to_ids(self, tags: Dict) -> List[int]:
+        """將 Assistant 返回的標籤轉換為 WordPress 標籤 ID"""
+        tag_ids = []
+        processed_tags = set()  # 用於追蹤已處理的標籤
+        
+        try:
+            # 檢查是否有 existing_tags
+            if "existing_tags" in tags:
+                existing_tags = tags["existing_tags"]
+                
+                # 處理 categories 和 tags
+                for tag_type, tag_groups in existing_tags.items():
+                    if isinstance(tag_groups, dict):
+                        for group_name, group_data in tag_groups.items():
+                            if isinstance(group_data, dict):
+                                for subgroup_name, values in group_data.items():
+                                    if isinstance(values, list):
+                                        for value in values:
+                                            if value not in processed_tags:
+                                                processed_tags.add(value)
+                                                tag_id = self.create_tag(value)
+                                                if tag_id:
+                                                    tag_ids.append(tag_id)
+                                                    self.logger.debug(f"建立標籤: {value} -> ID: {tag_id}")
+                            elif isinstance(group_data, list):
+                                for value in group_data:
+                                    if value not in processed_tags:
+                                        processed_tags.add(value)
+                                        tag_id = self.create_tag(value)
+                                        if tag_id:
+                                            tag_ids.append(tag_id)
+                                            self.logger.debug(f"建立標籤: {value} -> ID: {tag_id}")
+            
+            if not tag_ids:
+                self.logger.warning("沒有成功處理任何標籤")
+                
+            return list(set(tag_ids))  # 確保返回的 ID 列表沒有重複
+            
+        except Exception as e:
+            self.logger.error(f"轉換標籤時發生錯誤: {str(e)}")
+            return []
+            
+    def create_tag(self, name):
+        """創建新標籤，如果標籤已存在則返回現有標籤的 ID"""
+        endpoint = f"{self.api_base}/video_tag"
+        response = requests.post(
+            endpoint,
+            auth=self.auth,
+            json={'name': name}
+        )
+        
+        if response.status_code == 201:
+            return response.json()['id']
+        elif response.status_code == 400:
+            error_data = response.json()
+            if error_data.get('code') == 'term_exists':
+                # 如果標籤已存在，返回現有標籤的 ID
+                return error_data['data']['term_id']
+            else:
+                raise Exception(f"創建標籤失敗: {response.status_code} - {response.text}")
+        else:
+            raise Exception(f"創建標籤失敗: {response.status_code} - {response.text}")
+            
+    def get_thumbnail_url(self, video_id: str) -> Optional[str]:
+        """從 YouTube 影片 ID 獲取縮圖網址"""
+        try:
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': True,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+                if info and 'thumbnail' in info:
+                    return info['thumbnail']
+                return None
+        except Exception as e:
+            self.logger.error(f"獲取縮圖失敗：{str(e)}")
+            return None
+            
+    def compress_image(self, image_data: bytes, max_size: int = 1024) -> bytes:
+        """壓縮圖片到指定大小以下
+
+        Args:
+            image_data: 原始圖片數據
+            max_size: 最大尺寸（寬或高）
+
+        Returns:
+            壓縮後的圖片數據
+        """
+        try:
+            # 打開圖片
+            img = Image.open(BytesIO(image_data))
+            
+            # 計算縮放比例
+            ratio = min(max_size / img.width, max_size / img.height)
+            if ratio < 1:
+                new_size = (int(img.width * ratio), int(img.height * ratio))
+                img = img.resize(new_size, Image.Resampling.LANCZOS)
+            
+            # 儲存壓縮後的圖片
+            output = BytesIO()
+            img.save(output, format='JPEG', quality=85, optimize=True)
+            return output.getvalue()
+        except Exception as e:
+            self.logger.error(f"壓縮圖片失敗：{str(e)}")
+            return image_data
+
+    def download_thumbnail(self, url: str) -> Optional[bytes]:
+        """下載縮圖
+
+        Args:
+            url: 縮圖網址
+
+        Returns:
+            圖片數據或 None（如果下載失敗）
+        """
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                return response.content
+            return None
+        except Exception as e:
+            self.logger.error(f"下載縮圖失敗：{str(e)}")
+            return None

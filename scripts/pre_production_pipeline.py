@@ -145,6 +145,17 @@ def download_and_convert(youtube_url, video_id, download_dir):
         logger.error(f"下載過程發生錯誤: {str(e)}")
         raise
 
+def extract_youtube_id(url: str) -> Optional[str]:
+    """從 YouTube URL 提取影片 ID"""
+    try:
+        # 使用 yt_dlp 提取影片 ID
+        ydl = yt_dlp.YoutubeDL({'quiet': True})
+        info = ydl.extract_info(url, download=False)
+        return info.get('id')
+    except Exception as e:
+        logger.error(f"提取 YouTube ID 失敗：{str(e)}")
+        return None
+
 def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, download_dir, wp):
     """處理單筆資料"""
     try:
@@ -201,12 +212,16 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                 # 移除重複的標籤 ID 並設置
                 tag_ids = list(set(tag_ids))
                 
+                # 提取 YouTube 影片 ID
+                youtube_id = extract_youtube_id(youtube_url)
+                
                 result = wp.create_draft(
                     title=title,
                     content=draft_content,
                     video_url=youtube_url,
                     video_length=length,
-                    video_tag=tag_ids
+                    video_tag=tag_ids,
+                    video_id=youtube_id
                 )
                 
                 # 取得草稿連結並更新到 H 欄
