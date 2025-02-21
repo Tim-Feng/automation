@@ -159,7 +159,7 @@ def write_vtt(blocks: List[dict], output_path: str):
 
 def main():
     if len(sys.argv) < 3:
-        logger.error('Usage: subtitle_splitter.py <input_file> <output_dir> [duration1 duration2 ...]')
+        logger.error('使用方式：subtitle_splitter.py <輸入檔案> <輸出資料夾> [時長1 時長2 ...]')
         return
 
     input_file = sys.argv[1]
@@ -169,39 +169,36 @@ def main():
     filename = os.path.basename(input_file)
     video_ids = get_video_ids(filename)
     
-    logger.info(f"裁切 VTT： {filename}")
-    
     if len(video_ids) > 1 and len(durations) != len(video_ids) - 1:
-        logger.error(f'時長數量需要比影片數量少 1 (got {len(durations)} durations for {len(video_ids)} videos)')
+        logger.error(f'時長數量需要比影片數量少 1（目前有 {len(durations)} 個時長，但有 {len(video_ids)} 個影片）')
         return
 
     try:
         with open(input_file, 'r', encoding='utf-8-sig') as f:
             content = f.read()
     except Exception as e:
-        logger.error(f'讀取檔案失敗: {str(e)}')
+        logger.error(f'讀取檔案失敗：{str(e)}')
         return
 
     blocks = parse_srt(content)
     
+    logger.info(f"開始處理字幕檔案：{filename}")
+    os.makedirs(output_dir, exist_ok=True)
+    
     if len(video_ids) == 1:
-        logger.info("單影片模式")
-        os.makedirs(output_dir, exist_ok=True)
         output_path = os.path.join(output_dir, f"{video_ids[0]}-zh.vtt")
         write_vtt(blocks, output_path)
-        logger.info(f"裁切完成： {filename}")
     else:
-        logger.info("多影片模式")
         split_blocks = split_subtitles(blocks, durations)
         if not split_blocks:
-            logger.error("Failed to split subtitle blocks")
+            logger.error("字幕裁切失敗")
             return
             
-        os.makedirs(output_dir, exist_ok=True)
         for video_id, blocks in zip(video_ids, split_blocks):
             output_path = os.path.join(output_dir, f"{video_id}-zh.vtt")
             write_vtt(blocks, output_path)
-        logger.info(f"裁切完成：{filename}")
+    
+    logger.info(f"字幕處理完成：{filename}")
 
 if __name__ == '__main__':
    main()
