@@ -70,11 +70,11 @@ def get_video_ids(filename: str) -> List[str]:
 def split_subtitles(blocks: List[dict], durations: List[int]) -> List[List[dict]]:
     """Split subtitles based on video durations"""
     if not blocks:
-        logger.error("No subtitle blocks to split")
+        logger.error("沒有可分割的字幕")
         return []
         
     if not durations:
-        logger.error("No durations provided for splitting")
+        logger.error("沒有提供分割時長")
         return []
     
     result = []
@@ -89,7 +89,6 @@ def split_subtitles(blocks: List[dict], durations: List[int]) -> List[List[dict]
             
             # 如果已經用完所有時長，將剩餘字幕加入最後一個影片
             if duration_index >= len(durations):
-                logger.debug(f"Adding remaining block to last video at {block_end_time}s")
                 adjusted_block = block.copy()
                 adjusted_block['start'] = block['start'] - current_duration
                 adjusted_block['end'] = block['end'] - current_duration
@@ -108,7 +107,6 @@ def split_subtitles(blocks: List[dict], durations: List[int]) -> List[List[dict]
             else:
                 # 需要開始新的影片
                 if current_blocks:
-                    logger.info(f"Completed video {duration_index} with {len(current_blocks)} blocks")
                     result.append(current_blocks)
                     current_blocks = []
                 
@@ -121,32 +119,30 @@ def split_subtitles(blocks: List[dict], durations: List[int]) -> List[List[dict]
                 current_blocks.append(adjusted_block)
     
     except Exception as e:
-        logger.error(f"Error during subtitle splitting: {str(e)}")
+        logger.error(f"分割字幕時發生錯誤：{str(e)}")
         return []
     
     # 加入最後一個影片的字幕
     if current_blocks:
-        logger.info(f"Adding final video with {len(current_blocks)} blocks")
         result.append(current_blocks)
     
     # 驗證結果
     expected_videos = len(durations) + 1
     if len(result) != expected_videos:
-        logger.warning(f"Expected {expected_videos} videos but got {len(result)}")
+        logger.warning(f"預期產生 {expected_videos} 個影片，但實際產生 {len(result)} 個")
     
     # 驗證每個影片的字幕時間戳
     for i, video_blocks in enumerate(result):
         if not video_blocks:
-            logger.warning(f"Video {i} has no subtitles")
+            logger.warning(f"影片 {i} 沒有字幕")
             continue
         
         video_duration = durations[i] if i < len(durations) else None
         last_block_end = video_blocks[-1]['end'].total_seconds()
         
         if video_duration and last_block_end > video_duration:
-            logger.warning(f"Video {i} has subtitles beyond its duration: {last_block_end}s > {video_duration}s")
+            logger.warning(f"影片 {i} 的字幕超出影片時長：{last_block_end}s > {video_duration}s")
     
-    logger.info(f"Split complete. Created {len(result)} videos")
     return result
 
 def write_vtt(blocks: List[dict], output_path: str):
@@ -181,8 +177,6 @@ def main():
         return
 
     blocks = parse_srt(content)
-    
-    logger.info(f"開始處理字幕檔案：{filename}")
     os.makedirs(output_dir, exist_ok=True)
     
     if len(video_ids) == 1:
@@ -197,8 +191,6 @@ def main():
         for video_id, blocks in zip(video_ids, split_blocks):
             output_path = os.path.join(output_dir, f"{video_id}-zh.vtt")
             write_vtt(blocks, output_path)
-    
-    logger.info(f"字幕處理完成：{filename}")
 
 if __name__ == '__main__':
    main()
