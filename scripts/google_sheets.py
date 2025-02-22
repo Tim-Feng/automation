@@ -5,6 +5,7 @@ from google.oauth2.service_account import Credentials
 from logger import get_workflow_logger
 from dotenv import load_dotenv
 from typing import List, Dict, Any
+import sys
 
 logger = get_workflow_logger('1', 'content_automation')  # Stage 1 因為這是內容準備階段
 
@@ -69,12 +70,11 @@ def get_video_info(video_ids: List[str], convert_duration: bool = True) -> Dict[
     """取得多個影片的資訊"""
     sheet = setup_google_sheets()
     info = {}
-    logger.info(f"Getting info for videos: {video_ids}")
     
     for video_id in video_ids:
         duration = get_column_value(sheet, 'E', video_id)
         wp_url = get_column_value(sheet, 'H', video_id)
-        logger.debug(f"Video {video_id} - Duration: {duration}, URL: {wp_url}")
+        logger.debug(f"影片 {video_id} - 時長：{duration}，網址：{wp_url}")
         
         if duration or wp_url:
             info[video_id] = {
@@ -89,33 +89,24 @@ def get_video_info(video_ids: List[str], convert_duration: bool = True) -> Dict[
                         info[video_id]['duration'] = str(minutes * 60 + seconds)
                     else:
                         info[video_id]['duration'] = duration
-                    logger.debug(f"Processed duration for {video_id}: {info[video_id]['duration']}")
                 except (ValueError, TypeError) as e:
-                    logger.warning(f"無法轉換時長格式 {duration}: {str(e)}")
+                    logger.warning(f"無法轉換時長格式 {duration}：{str(e)}")
                     info[video_id]['duration'] = duration
     
-    logger.info(f"Final video info: {info}")
+    logger.debug(f"影片資訊：{info}")
     return info
 
 def get_durations_for_split(video_info: Dict[str, Dict[str, Any]], video_ids: List[str]) -> str:
     """從完整影片資訊中提取用於拆分的時長列表"""
-    logger.info(f"Getting durations for videos: {video_ids}")
-    logger.debug(f"Video info received: {video_info}")
-    
     durations = []
     # 只處理除了最後一個以外的影片
     for video_id in video_ids[:-1]:
-        logger.debug(f"Processing video ID: {video_id}")
         if video_id in video_info and 'duration' in video_info[video_id]:
-            duration = video_info[video_id]['duration']
-            logger.debug(f"Found duration for {video_id}: {duration}")
             durations.append(video_info[video_id]['duration'])
         else:
-            logger.warning(f"Missing duration for video {video_id}")
+            logger.warning(f"找不到影片 {video_id} 的時長資訊")
     
-    result = ' '.join(durations)
-    logger.info(f"Final durations string: {result}")
-    return result
+    return ' '.join(durations)
 
 def batch_update(sheet, updates: List[Dict[str, Any]]) -> None:
     """批量更新表格
@@ -133,15 +124,14 @@ def batch_update(sheet, updates: List[Dict[str, Any]]) -> None:
 def main():
     import json
     parser = argparse.ArgumentParser(description='Google Sheets 操作工具')
-    parser.add_argument('--get-value', nargs=2, 
-                      metavar=('COLUMN', 'VIDEO_ID'),
-                      help='取得指定欄位的值')
+    parser.add_argument('--get-value', nargs=2,
+                      help='取得指定欄位的值 (欄位代號 影片ID)')
     parser.add_argument('--get-next-id', action='store_true',
                       help='取得下一個可用的 ID')
     parser.add_argument('--get-info', nargs='+',
                       help='取得多個影片的資訊')
     parser.add_argument('--get-durations', nargs='+',
-                      help='Get durations for videos')
+                      help='取得影片時長列表')
     args = parser.parse_args()
     
     dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config', '.env')
@@ -149,15 +139,11 @@ def main():
     
     try:
         if args.get_durations:
-            logger.info(f"Processing --get-durations with args: {args.get_durations}")
             video_info = get_video_info(args.get_durations)
-            logger.debug(f"Retrieved video info: {video_info}")
             durations = get_durations_for_split(video_info, args.get_durations)
-            logger.debug(f"Calculated durations: {durations}")
             print(durations)  # 輸出空格分隔的時長列表
             
         elif args.get_info:
-            logger.info(f"Processing --get-info with args: {args.get_info}")
             video_info = get_video_info(args.get_info)
             print(json.dumps(video_info))
             
@@ -171,10 +157,9 @@ def main():
             sheet = setup_google_sheets()
             next_id = get_next_id(sheet)
             print(next_id)
-            
     except Exception as e:
-        logger.error(f"執行失敗: {str(e)}")
-        raise  # 讓錯誤繼續往上傳遞，以便 AppleScript 能捕獲它
+        logger.error(f"執行過程發生錯誤：{str(e)}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
