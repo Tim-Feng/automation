@@ -440,7 +440,27 @@ on run {input, parameters}
                     my writeLog("INFO", "開始更新 Google Docs 內容...")
                     
                     -- 使用較簡單的 Python 腳本，注意這裡所有代碼都要靠左對齊
-                    set pythonScript to "'import sys,json; f=open(sys.argv[1],\"r\",encoding=\"utf-8-sig\"); lines=[line.strip() for line in f.readlines()]; filtered=[line for line in lines if line and not line.isdigit() and \" --> \" not in line]; print(json.dumps(\"\\n\".join(filtered)))'"
+                    set pythonScript to "'import sys,json,chardet
+with open(sys.argv[1],\"rb\") as f:
+    raw=f.read()
+enc=chardet.detect(raw)[\"encoding\"]
+if not enc:
+    enc=\"utf-8-sig\"
+try:
+    content=raw.decode(enc)
+except UnicodeDecodeError:
+    encodings=[\"utf-8-sig\",\"utf-16\",\"big5\",\"gb18030\"]
+    for enc in encodings:
+        try:
+            content=raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        raise ValueError(\"無法判斷檔案編碼\")
+lines=[line.strip() for line in content.splitlines()]
+filtered=[line for line in lines if line and not line.isdigit() and \" --> \" not in line]
+print(json.dumps(\"\\n\".join(filtered)))'"
                     
                     set subtitleText to do shell script "/usr/local/bin/python3 -c " & pythonScript & " " & quoted form of subtitlePath
                     
@@ -472,25 +492,28 @@ on run {input, parameters}
 
                 -- 4.8 搜尋「字幕時間軸」資料夾並上傳字幕檔
                 my writeLog("INFO", "搜尋「字幕時間軸」資料夾...")
-
+                
                 set searchSubtitleFolderQuery to "mimeType='application/vnd.google-apps.folder' and name='字幕時間軸' and '" & folderId & "' in parents and trashed=false"
                 set subtitleFolderQueryEncoded to do shell script ¬
                    "python3 -c \"import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))\" " & ¬
                    quoted form of searchSubtitleFolderQuery
-
+                
                 set searchSubtitleFolderCmd to "curl -s -X GET 'https://www.googleapis.com/drive/v3/files?q=" & subtitleFolderQueryEncoded & ¬
                    "&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives' " & ¬
                    "-H 'Authorization: Bearer " & accessToken & "'"
-
+                
                 set subtitleFolderResponse to do shell script searchSubtitleFolderCmd
                 set subtitleFolderId to do shell script "echo " & quoted form of subtitleFolderResponse & ¬
                    " | python3 -c \"import sys, json; arr=json.load(sys.stdin).get('files', []); " & ¬
                    "print(arr[0]['id'] if arr else '')\""
-
+                
                 -- 找出所有字幕檔
                 set findCmd to "find " & quoted form of targetFolderPath & " -maxdepth 1 -type f \\( -name \"*.srt\" -o -name \"*.ass\" -o -name \"*.vtt\" \\)"
                 set subtitleFiles to paragraphs of (do shell script findCmd)
-
+                
+                my writeLog("INFO", "開始上傳字幕檔案：" & subtitleID)
+                set uploadSuccess to true
+                
                 repeat with filePath in subtitleFiles
                    set fileName to do shell script "basename " & quoted form of filePath
                    
@@ -507,13 +530,18 @@ on run {input, parameters}
                    if uploadUrl is not "" then
                        try
                            do shell script "curl -s -X PUT '" & uploadUrl & "' -H 'Authorization: Bearer " & accessToken & "' --data-binary '@" & filePath & "'"
-                           my writeLog("SUCCESS", "已上傳字幕檔：" & subtitleID)
+                           my writeLog("DEBUG", "已上傳：" & fileName)
                        on error errMsg
+                           set uploadSuccess to false
                            my writeLog("ERROR", "字幕檔上傳失敗：" & fileName & " - " & errMsg)
                        end try
                    end if
                 end repeat
-
+                
+                if uploadSuccess then
+                    my writeLog("SUCCESS", "已上傳所有字幕檔案：" & subtitleID)
+                end if
+                
                 -- 移動資料夾到 In Progress
                 my writeLog("INFO", "開始移動資料夾到 In Progress...")
                 if my moveFolder(subtitleID) then
