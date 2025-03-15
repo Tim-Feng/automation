@@ -13,6 +13,7 @@ logger = get_workflow_logger('1', 'content_automation')
 # ========== 全域功能開關 ==========
 ENABLE_OPENAI = False     
 ENABLE_WORDPRESS = True  
+ENABLE_GEMINI = True  # 啟用 Gemini File API 分析
 # =================================
 
 # 影片下載策略配置
@@ -190,11 +191,32 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                 if not draft_content:
                     logger.warning(f"Perplexity API 未返回內容，使用預設內容")
                     draft_content = f"這是 {title} 的介紹影片。"
+                
+                # 使用 Gemini File API 分析影片內容
+                video_analysis = None
+                if ENABLE_GEMINI:
+                    try:
+                        from gemini_file_client import GeminiFileClient
+                        gemini = GeminiFileClient()
+                        video_analysis = gemini.analyze_video(youtube_url)
+                        if video_analysis:
+                            logger.info(f"Gemini API 成功分析影片 {assigned_id}")
+                        else:
+                            logger.warning(f"Gemini API 未返回內容，僅使用 Perplexity 內容")
+                    except Exception as gemini_error:
+                        logger.error(f"Gemini API 錯誤: {gemini_error}")
+                        logger.warning("繼續使用僅有的 Perplexity 內容")
+                
+                # 合併 Perplexity 和 Gemini 的內容
+                combined_content = draft_content
+                if video_analysis:
+                    combined_content = f"{draft_content}\n\n{video_analysis}"
+                    logger.debug("已合併 Perplexity 和 Gemini 內容")
 
                 # 使用 TagSuggester 生成標籤
                 from tag_suggestion import TagSuggester
                 tag_suggester = TagSuggester()
-                tags = tag_suggester.suggest_tags(title=title, content=draft_content)
+                tags = tag_suggester.suggest_tags(title=title, content=combined_content)
                 
                 # 初始化標籤列表，始終包含 featured 標籤
                 tag_ids = [136]  # "featured" 標籤的 ID
