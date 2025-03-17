@@ -247,7 +247,13 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                 )
                 
                 # 取得草稿連結並更新到 H 欄
-                draft_link = result.get('link', '建立草稿失敗')
+                # 轉換為標準 Gutenberg 編輯器 URL
+                post_id = result.get('id')
+                if post_id:
+                    draft_link = f"{wp.site_url}/wp-admin/post.php?post={post_id}&action=edit"
+                else:
+                    draft_link = result.get('link', '建立草稿失敗')
+                    
                 updates.append({
                     'range': f'H{row_index}',
                     'values': [[draft_link]]
