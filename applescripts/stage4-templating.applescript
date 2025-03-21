@@ -32,6 +32,31 @@ on removeEmoji(inputText)
     end if
 end removeEmoji
 
+-- 帶重試機制的命令執行
+on runCommandWithRetry(cmd, description, maxRetries, retryDelay)
+    set retryCount to 0
+    repeat
+        try
+            my writeLog("INFO", description & "...")
+            set result to do shell script cmd
+            return result
+        on error errMsg
+            set retryCount to retryCount + 1
+            my writeLog("WARNING", description & " 失敗 (嘗試 " & retryCount & "/" & maxRetries & "): " & errMsg)
+            
+            if retryCount ≥ maxRetries then
+                my writeLog("ERROR", description & " 已達最大重試次數，放棄操作")
+                error description & " 失敗: " & errMsg
+            end if
+            
+            -- 指數退避延遲
+            set currentDelay to retryDelay * (2 ^ (retryCount - 1))
+            my writeLog("INFO", "等待 " & currentDelay & " 秒後重試...")
+            delay currentDelay
+        end try
+    end repeat
+end runCommandWithRetry
+
 
 
 on run {input, parameters}
@@ -181,22 +206,20 @@ on run {input, parameters}
                 set driveScriptPath to "/Users/Mac/GitHub/automation/scripts/google_drive.py"
                 
                 -- 搜尋「嵌入影片」資料夾
-                my writeLog("INFO", "搜尋「嵌入影片」資料夾...")
                 set findEmbedFolderCommand to quoted form of pythonPath & " " & quoted form of driveScriptPath & ¬
                     " --find-folder \"嵌入影片\" " & quoted form of folderId
                 
-                set embedFolderId to do shell script findEmbedFolderCommand
+                set embedFolderId to my runCommandWithRetry(findEmbedFolderCommand, "搜尋「嵌入影片」資料夾", 3, 5)
                 
                 if embedFolderId is equal to "" then
                     error "找不到「嵌入影片」資料夾"
                 end if
                 
                 -- 搜尋「截圖」資料夾
-                my writeLog("INFO", "搜尋「截圖」資料夾...")
                 set findScreenshotFolderCommand to quoted form of pythonPath & " " & quoted form of driveScriptPath & ¬
                     " --find-folder \"截圖\" " & quoted form of folderId
                 
-                set screenshotFolderId to do shell script findScreenshotFolderCommand
+                set screenshotFolderId to my runCommandWithRetry(findScreenshotFolderCommand, "搜尋「截圖」資料夾", 3, 5)
                 
                 if screenshotFolderId is equal to "" then
                     error "找不到「截圖」資料夾"
@@ -207,27 +230,25 @@ on run {input, parameters}
                     -- 上傳影片到「嵌入影片」資料夾
                     set videoPath to movieDirectory & "/" & movieID & "-1920*3414-zh.mp4"
                     set videoName to movieID & "-1920*3414-zh.mp4"
-                    my writeLog("INFO", "開始上傳嵌入影片")
                     
                     set uploadVideoCommand to quoted form of pythonPath & " " & quoted form of driveScriptPath & ¬
                         " --upload-file " & quoted form of videoPath & ¬
                         " " & quoted form of videoName & ¬
                         " " & quoted form of embedFolderId
                     
-                    do shell script uploadVideoCommand
+                    my runCommandWithRetry(uploadVideoCommand, "上傳嵌入影片", 3, 5)
                     my writeLog("SUCCESS", "嵌入影片上傳完成")
                     
                     -- 上傳封面圖到「截圖」資料夾
                     set coverPath to movieDirectory & "/" & movieID & "_cover.jpg"
                     set coverName to movieID & "_cover.jpg"
-                    my writeLog("INFO", "開始上傳封面")
                     
                     set uploadCoverCommand to quoted form of pythonPath & " " & quoted form of driveScriptPath & ¬
                         " --upload-file " & quoted form of coverPath & ¬
                         " " & quoted form of coverName & ¬
                         " " & quoted form of screenshotFolderId
                     
-                    do shell script uploadCoverCommand
+                    my runCommandWithRetry(uploadCoverCommand, "上傳封面", 3, 5)
                     my writeLog("SUCCESS", "封面上傳完成")
                 on error errMsg
                     my writeLog("ERROR", "檔案上傳失敗：" & errMsg)

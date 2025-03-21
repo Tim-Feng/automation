@@ -15,7 +15,7 @@ logger = get_workflow_logger('4', 'google_drive')  # Stage-4 因為這是最後�
 
 # 重試相關常量
 MAX_RETRIES = 3
-INITIAL_RETRY_DELAY = 1  # 初始重試延遲（秒）
+INITIAL_RETRY_DELAY = 3  # 初始重試延遲（秒）
 
 class GoogleDriveAPI:
     def __init__(self):
@@ -49,7 +49,8 @@ class GoogleDriveAPI:
                 "grant_type": "refresh_token"
             }
             
-            response = requests.post(token_url, data=data)
+            # 添加 30 秒的超時設置，避免請求無限期等待
+            response = requests.post(token_url, data=data, timeout=30)
             response.raise_for_status()
             
             return response.json()["access_token"]
