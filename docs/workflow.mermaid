@@ -1,4 +1,10 @@
 flowchart TB
+    subgraph "⚙️ 依賴項管理"
+        DEP[dependency_manager.py] -->|版本檢查| DEP1[檢查 yt-dlp 版本]
+        DEP1 -->|自動更新| DEP2[更新至最新版本]
+        DEP2 -->|狀態回報| DEP3[記錄更新結果]
+    end
+
     subgraph "1️⃣ 前置處理"
         A[stage1-preparation.applescript] -->|自動化處理| A1[從 Google Sheets 擷取資訊]
         A1 --> A2[下載 YouTube 影片]
@@ -59,6 +65,7 @@ flowchart TB
     end
 
     %% 主要流程連接
+    DEP -->|依賴檢查| A
     A -->|完成| B
     B -->|送翻譯| C
     C -->|完成| D
@@ -72,3 +79,4 @@ flowchart TB
     class A1,A2,A3,A31,A32,A4,B1,B2,B3,B4,B5,B6,C1,C2,C3,C4,C5,C6,C7,C8,D1,D2,D3 subProcess;
     class AA,AB,AC,AD,AE,BA,BB,BC,BD,CA,CB,CC,CD,CE,CF,DA,DB,DC,DD utility;
     class ACL,BCL,CEL,DCL logger;
+    class DEP,DEP1,DEP2,DEP3 utility;

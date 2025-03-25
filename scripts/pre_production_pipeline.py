@@ -6,7 +6,8 @@ import time
 import glob
 from logger import get_workflow_logger
 from google_sheets import setup_google_sheets, get_next_id, batch_update
-from wordpress_api import WordPressAPI  
+from wordpress_api import WordPressAPI
+from dependency_manager import check_and_update_ytdlp
 
 logger = get_workflow_logger('1', 'content_automation')  
 
@@ -313,6 +314,13 @@ def main():
     # 確保在程式開始時就載入環境變數
     dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config', '.env')
     load_dotenv(dotenv_path)
+    
+    # 檢查並更新 yt-dlp
+    success, message = check_and_update_ytdlp()
+    if not success:
+        logger.error(f"yt-dlp 更新檢查失敗：{message}")
+        return
+    logger.info(message)
     
     sheet = setup_google_sheets()
     check_pending_and_process(sheet)
