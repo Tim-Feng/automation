@@ -41,11 +41,6 @@
 - 類別：`WordPressAPI`
 - 功能：處理 WordPress API 相關操作，包括建立草稿、上傳媒體等
 
-#### 批次更新草稿 (Archived)
-- 腳本：`scripts/batch_update_drafts.py`（已存檔）
-- 功能：從 Google Sheets 讀取影片資訊，使用 AI 生成內容和標籤
-- 狀態：已存檔，代碼可在 MEMORIES 中找到
-
 ### 6. AI 整合
 #### Perplexity API
 - 腳本：`scripts/perplexity_client.py`
