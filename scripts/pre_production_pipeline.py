@@ -292,10 +292,14 @@ def check_pending_and_process(sheet):
         status = row[9].strip().lower()  # J欄
 
         if youtube_url and not video_id_in_sheet and status != 'done':
-            assigned_id = next_id
-            next_id += 1
+            # 每次都重新取得 next_id，避免重複
+            assigned_id = get_next_id(sheet)
 
-            # 先標記 pending
+            # 立即更新 ID 和狀態
+            sheet.update(f'A{i}', [[assigned_id]])
+            sheet.update(f'J{i}', [['pending']])
+
+            # 仍然加入更新列表，以便記錄
             updates.append({'range': f'A{i}', 'values': [[assigned_id]]})
             updates.append({'range': f'J{i}', 'values': [['pending']]})
 

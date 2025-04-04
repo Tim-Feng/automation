@@ -43,11 +43,43 @@ def setup_google_sheets():
         raise
 
 def get_next_id(sheet) -> int:
-    """取得下一個可用的 ID"""
-    id_values = sheet.col_values(1)[2:]  # 跳過前兩列(標題)
-    id_numbers = [int(x) for x in id_values if x.isdigit()]
-    max_id = max(id_numbers) if id_numbers else 0
-    return max_id + 1
+    """取得下一個可用的 ID
+    
+    邏輯：
+    1. 取得所有已分配的 ID
+    2. 從最大的 ID 往上掃描，找出第一個空缺的 ID
+    3. 如果沒有空缺，則從最大 ID + 1 開始
+    
+    Returns:
+        int: 下一個可用的 ID
+    """
+    # 取得所有 ID（跳過標題列）
+    id_values = sheet.col_values(1)[2:]
+    
+    # 建立已分配 ID 的集合（用於快速查找）
+    assigned_ids = {int(x) for x in id_values if x.isdigit()}
+    
+    if not assigned_ids:
+        return 1
+        
+    # 取得最大和最小的 ID
+    max_id = max(assigned_ids)
+    min_id = min(assigned_ids)
+    
+    # 從最小 ID 開始掃描，找出第一個空缺的 ID
+    current_id = min_id
+    while current_id <= max_id:
+        if current_id not in assigned_ids:
+            return current_id
+        current_id += 1
+    
+    # 重新取得最大值，確保不會漏掉新加入的 ID
+    max_id = max(assigned_ids)
+    next_id = max_id + 1
+    while next_id in assigned_ids:
+        next_id += 1
+    
+    return next_id
 
 def get_column_value(sheet, column: str, video_id: str) -> str:
     """取得指定欄位的值"""
