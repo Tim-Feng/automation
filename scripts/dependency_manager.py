@@ -18,7 +18,8 @@ def check_and_update_ytdlp() -> Tuple[bool, str]:
     """
     try:
         # Check current version
-        result = subprocess.run(['yt-dlp', '--version'], 
+        ytdlp_path = '/Users/Mac/Library/Python/3.11/bin/yt-dlp'
+        result = subprocess.run([ytdlp_path, '--version'], 
                               capture_output=True, 
                               text=True, 
                               check=True)
@@ -28,13 +29,13 @@ def check_and_update_ytdlp() -> Tuple[bool, str]:
         logger.info(f"Current yt-dlp version: {current_version}")
         logger.info("Checking for yt-dlp updates...")
         
-        update_result = subprocess.run(['pip', 'install', '--upgrade', 'yt-dlp'],
+        update_result = subprocess.run(['pip3', 'install', '--upgrade', 'yt-dlp'],
                                      capture_output=True,
                                      text=True)
         
         if update_result.returncode == 0:
             # Check new version after update
-            result = subprocess.run(['yt-dlp', '--version'], 
+            result = subprocess.run([ytdlp_path, '--version'], 
                                   capture_output=True, 
                                   text=True, 
                                   check=True)
