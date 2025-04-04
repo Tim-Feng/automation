@@ -19,7 +19,18 @@ ENABLE_WORDPRESS = True
 # 影片下載策略配置
 format_strategies = [
     {
-        'format': 'bestvideo[height<=1080]+bestaudio[acodec!=opus][ext=m4a]/best[height<=1080]',
+        # 策略 1：優先選擇高品質 1080p 影片和 m4a 音訊
+        'format': 'bestvideo[height<=1080]+bestaudio[ext=m4a]/best[height<=1080]',
+        'postprocessor_args': ['-c:v', 'libx264', '-crf', '23']
+    },
+    {
+        # 策略 2：允許任何音訊格式
+        'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
+        'postprocessor_args': ['-c:v', 'libx264', '-crf', '23']
+    },
+    {
+        # 策略 3：直接下載最佳品質
+        'format': 'best',
         'postprocessor_args': ['-c:v', 'libx264', '-crf', '23']
     }
 ]
