@@ -18,3 +18,6 @@ __pycache__/
 
 # 動態生成的數據文件
 docs/tags.json
+
+# 已封存的數據文件
+scripts/archive/data/

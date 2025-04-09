@@ -241,6 +241,13 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                 post_id = result.get('id')
                 if post_id:
                     draft_link = f"{wp.site_url}/wp-admin/post.php?post={post_id}&action=edit"
+                    
+                    # 將文章 ID 填入 I 欄位
+                    updates.append({
+                        'range': f'I{row_index}',
+                        'values': [[str(post_id)]]
+                    })
+                    logger.info(f"將文章 ID {post_id} 填入 I{row_index} 欄位")
                 else:
                     draft_link = result.get('link', '建立草稿失敗')
                     
