@@ -24,6 +24,10 @@ class WordPressAPI:
             os.getenv("WP_USERNAME"),
             os.getenv("WP_APP_PASSWORD")
         )
+        self.headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        }
 
     def create_draft(
         self,
@@ -33,9 +37,27 @@ class WordPressAPI:
         video_length: str = "",
         video_tag: Optional[List[int]] = None,
         video_id: str = None,
+        meta_data: Optional[Dict] = None,
     ) -> Dict:
         """建立影片草稿"""
         endpoint = f"{self.api_base}/video"
+        
+        # 準備基本的 meta 資料
+        meta = {
+            'video_url': video_url,
+            'length': video_length
+        }
+        
+        # 如果提供了額外的 meta 資料，將其合併到 meta 中
+        if meta_data:
+            # 先將 video_description 分離出來，稍後單獨處理
+            video_description = None
+            if 'video_description' in meta_data:
+                video_description = meta_data.pop('video_description')
+                self.logger.info("將在創建文章後單獨設置 video_description 欄位")
+            
+            # 合併其他 meta 資料
+            meta.update(meta_data)
         
         data = {
             'title': title,
@@ -43,10 +65,7 @@ class WordPressAPI:
             'status': 'draft',
             'comment_status': 'closed',  # 關閉評論
             'ping_status': 'closed',     # 關閉 pingbacks
-            'meta': {
-                'video_url': video_url,
-                'length': video_length
-            }
+            'meta': meta
         }
         
         if video_tag:
@@ -92,6 +111,40 @@ class WordPressAPI:
                     self.logger.info("標籤更新成功")
                 else:
                     self.logger.error(f"標籤更新失敗 - Status: {update_response.status_code}")
+            
+            # 如果成功創建文章並有 video_description，則單獨設置該欄位
+            if result and video_description and 'id' in result:
+                post_id = result['id']
+                self.logger.info(f"文章創建成功，ID: {post_id}，現在設置 video_description 欄位")
+                
+                try:
+                    # 使用 WordPress REST API 的 update 端點設置 video_description
+                    update_endpoint = f"{self.api_base}/video/{post_id}"
+                    update_data = {
+                        'meta': {
+                            'video_description': video_description
+                        }
+                    }
+                    
+                    headers = {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    }
+                    
+                    update_response = requests.post(
+                        update_endpoint,
+                        json=update_data,
+                        auth=self.auth,
+                        headers=headers
+                    )
+                    
+                    if update_response.status_code in [200, 201]:
+                        self.logger.info("設置 video_description 欄位成功")
+                    else:
+                        self.logger.warning(f"設置 video_description 欄位失敗: {update_response.status_code}")
+                        self.logger.warning(f"錯誤訊息: {update_response.text}")
+                except Exception as e:
+                    self.logger.error(f"設置 video_description 欄位時發生錯誤: {str(e)}")
             
             return result
             

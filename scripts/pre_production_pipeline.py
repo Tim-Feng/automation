@@ -206,6 +206,7 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                 
                 # 使用 Gemini Video Analyzer 分析影片內容
                 video_analysis = None
+                raw_video_description = None  # 用於保存原始（未格式化）的影片描述
                 if ENABLE_GEMINI:
                     try:
                         from gemini_video_analyzer import GeminiVideoAnalyzer
@@ -214,16 +215,25 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                         # 第一優先：分析本地影片檔案（如果存在）
                         if output_file and os.path.exists(output_file):
                             logger.info(f"嘗試分析本地影片檔案: {output_file}")
+                            # 獲取原始（未格式化）的影片描述
+                            raw_video_description = gemini.analyze_video_file(output_file, title, use_wordpress_format=False)
+                            # 獲取格式化的影片描述用於文章內容
                             video_analysis = gemini.analyze_video_file(output_file, title)
                         
                         # 如果本地影片不存在或分析失敗，嘗試直接分析 YouTube 影片
                         if not video_analysis or "技術限制說明" in video_analysis:
                             logger.info(f"本地影片分析失敗或不存在，嘗試直接分析 YouTube 影片: {youtube_url}")
+                            # 獲取原始（未格式化）的影片描述
+                            raw_video_description = gemini.analyze_youtube_video(youtube_url, title, use_wordpress_format=False)
+                            # 獲取格式化的影片描述用於文章內容
                             video_analysis = gemini.analyze_youtube_video(youtube_url, title)
                             
                             # 如果直接分析也失敗，嘗試下載後分析
                             if not video_analysis or "技術限制說明" in video_analysis:
                                 logger.info(f"直接分析 YouTube 影片失敗，嘗試下載後分析: {youtube_url}")
+                                # 獲取原始（未格式化）的影片描述
+                                raw_video_description = gemini.analyze_youtube_video_by_download(youtube_url, title, use_wordpress_format=False)
+                                # 獲取格式化的影片描述用於文章內容
                                 video_analysis = gemini.analyze_youtube_video_by_download(youtube_url, title)
                         
                         if video_analysis and "技術限制說明" not in video_analysis:
@@ -231,15 +241,18 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                         else:
                             logger.warning(f"Gemini API 未返回有效內容，僅使用 Perplexity 內容")
                             video_analysis = None
+                            raw_video_description = None
                     except Exception as gemini_error:
                         logger.error(f"Gemini API 錯誤: {gemini_error}")
                         logger.warning("繼續使用僅有的 Perplexity 內容")
+                        raw_video_description = None
                 
-                # 合併 Perplexity 和 Gemini 的內容
+                # 準備用於標籤生成的合併內容（僅用於標籤生成，不用於文章內容）
                 combined_content = draft_content
                 if video_analysis:
+                    # 僅用於標籤生成的合併內容
                     combined_content = f"{draft_content}\n\n{video_analysis}"
-                    logger.debug("已合併 Perplexity 和 Gemini 內容")
+                    logger.debug("已準備用於標籤生成的合併內容")
 
                 # 使用 TagSuggester 生成標籤
                 from tag_suggestion import TagSuggester
@@ -270,13 +283,26 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                 # 提取 YouTube 影片 ID
                 youtube_id = extract_youtube_id(youtube_url)
                 
+                # 準備 meta 資料，包含影片描述
+                meta_data = {
+                    'video_url': youtube_url,
+                    'length': length
+                }
+                
+                # 如果有原始影片描述，將其添加到 meta 資料中
+                if raw_video_description:
+                    meta_data['video_description'] = raw_video_description
+                    logger.info(f"將原始影片描述保存到 post_meta 欄位")
+                
+                # 注意：文章內容只使用 Perplexity 的結果，不包含 Gemini 的影片描述
                 result = wp.create_draft(
                     title=title,
-                    content=draft_content,
+                    content=draft_content,  # 只使用 Perplexity 的結果作為文章內容
                     video_url=youtube_url,
                     video_length=length,
                     video_tag=tag_ids,
-                    video_id=youtube_id
+                    video_id=youtube_id,
+                    meta_data=meta_data
                 )
                 
                 # 取得草稿連結並更新到 H 欄

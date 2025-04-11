@@ -29,13 +29,14 @@ class GeminiVideoAnalyzer:
         self.model = "gemini-1.5-pro"  # 使用成功測試的模型
         logger.debug(f"初始化 Gemini Video Analyzer，使用模型: {self.model}")
     
-    def analyze_youtube_video(self, youtube_url: str, title: str = "", max_retries: int = 3) -> Optional[str]:
+    def analyze_youtube_video(self, youtube_url: str, title: str = "", max_retries: int = 3, use_wordpress_format: bool = True) -> Optional[str]:
         """直接分析 YouTube 影片
         
         Args:
             youtube_url: YouTube 影片網址
             title: 影片標題，可選
             max_retries: 最大重試次數，預設為 3
+            use_wordpress_format: 是否使用 WordPress 古騰堡格式，預設為 True
             
         Returns:
             成功時返回分析結果文字，失敗時返回 None
@@ -115,8 +116,8 @@ class GeminiVideoAnalyzer:
                     # 成功獲取回應
                     result = response.text
                     
-                    # 當使用命令列直接執行時，不套用 WordPress 格式
-                    if self._is_command_line_execution():
+                    # 根據參數決定是否套用 WordPress 格式
+                    if not use_wordpress_format or self._is_command_line_execution():
                         return result
                     else:
                         return self.format_response(result)
@@ -209,13 +210,14 @@ class GeminiVideoAnalyzer:
         # 如果是從 gemini_video_analyzer.py 或 test_single_video.py 執行，都視為命令列執行
         return sys.argv[0].endswith('gemini_video_analyzer.py') or sys.argv[0].endswith('test_single_video.py')
         
-    def analyze_video_file(self, video_file_path: str, title: str = "", max_retries: int = 3) -> Optional[str]:
+    def analyze_video_file(self, video_file_path: str, title: str = "", max_retries: int = 3, use_wordpress_format: bool = True) -> Optional[str]:
         """分析本地影片檔案
         
         Args:
             video_file_path: 本地影片檔案路徑
             title: 影片標題，可選
             max_retries: 最大重試次數，預設為 3
+            use_wordpress_format: 是否使用 WordPress 古騰堡格式，預設為 True
             
         Returns:
             成功時返回分析結果文字，失敗時返回 None
@@ -278,8 +280,8 @@ class GeminiVideoAnalyzer:
                     # 成功獲取回應
                     result = response.text
                     
-                    # 當使用命令列直接執行時，不套用 WordPress 格式
-                    if self._is_command_line_execution():
+                    # 根據參數決定是否套用 WordPress 格式
+                    if not use_wordpress_format or self._is_command_line_execution():
                         return result
                     else:
                         return self.format_response(result)
@@ -302,13 +304,14 @@ class GeminiVideoAnalyzer:
         logger.error(f"分析本地影片檔案失敗，已重試 {max_retries} 次")
         return error_message
         
-    def analyze_youtube_video_by_download(self, youtube_url: str, title: str = "", max_retries: int = 3) -> Optional[str]:
+    def analyze_youtube_video_by_download(self, youtube_url: str, title: str = "", max_retries: int = 3, use_wordpress_format: bool = True) -> Optional[str]:
         """通過下載 YouTube 影片後分析
         
         Args:
             youtube_url: YouTube 影片網址
             title: 影片標題，可選
             max_retries: 最大重試次數，預設為 3
+            use_wordpress_format: 是否使用 WordPress 古騰堡格式，預設為 True
             
         Returns:
             成功時返回分析結果文字，失敗時返回 None
@@ -338,7 +341,7 @@ class GeminiVideoAnalyzer:
                 if os.path.exists(temp_video_path):
                     # 使用 analyze_video_file 方法分析下載的影片
                     logger.info(f"下載成功，開始分析影片檔案: {temp_video_path}")
-                    return self.analyze_video_file(temp_video_path, title, max_retries)
+                    return self.analyze_video_file(temp_video_path, title, max_retries, use_wordpress_format)
                 else:
                     logger.error(f"下載 YouTube 影片失敗: {youtube_url}")
                     return f"下載 YouTube 影片失敗: {youtube_url}"
