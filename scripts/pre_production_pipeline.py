@@ -192,17 +192,33 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                     logger.warning(f"Perplexity API 未返回內容，使用預設內容")
                     draft_content = f"這是 {title} 的介紹影片。"
                 
-                # 使用 Gemini File API 分析影片內容
+                # 使用 Gemini Video Analyzer 分析影片內容
                 video_analysis = None
                 if ENABLE_GEMINI:
                     try:
-                        from gemini_file_client import GeminiFileClient
-                        gemini = GeminiFileClient()
-                        video_analysis = gemini.analyze_video(youtube_url)
-                        if video_analysis:
+                        from gemini_video_analyzer import GeminiVideoAnalyzer
+                        gemini = GeminiVideoAnalyzer()
+                        
+                        # 第一優先：分析本地影片檔案（如果存在）
+                        if output_file and os.path.exists(output_file):
+                            logger.info(f"嘗試分析本地影片檔案: {output_file}")
+                            video_analysis = gemini.analyze_video_file(output_file, title)
+                        
+                        # 如果本地影片不存在或分析失敗，嘗試直接分析 YouTube 影片
+                        if not video_analysis or "技術限制說明" in video_analysis:
+                            logger.info(f"本地影片分析失敗或不存在，嘗試直接分析 YouTube 影片: {youtube_url}")
+                            video_analysis = gemini.analyze_youtube_video(youtube_url, title)
+                            
+                            # 如果直接分析也失敗，嘗試下載後分析
+                            if not video_analysis or "技術限制說明" in video_analysis:
+                                logger.info(f"直接分析 YouTube 影片失敗，嘗試下載後分析: {youtube_url}")
+                                video_analysis = gemini.analyze_youtube_video_by_download(youtube_url, title)
+                        
+                        if video_analysis and "技術限制說明" not in video_analysis:
                             logger.info(f"Gemini API 成功分析影片 {assigned_id}")
                         else:
-                            logger.warning(f"Gemini API 未返回內容，僅使用 Perplexity 內容")
+                            logger.warning(f"Gemini API 未返回有效內容，僅使用 Perplexity 內容")
+                            video_analysis = None
                     except Exception as gemini_error:
                         logger.error(f"Gemini API 錯誤: {gemini_error}")
                         logger.warning("繼續使用僅有的 Perplexity 內容")
@@ -216,16 +232,21 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                 # 使用 TagSuggester 生成標籤
                 from tag_suggestion import TagSuggester
                 tag_suggester = TagSuggester()
+                # 日誌已經在 TagSuggester 中記錄，這裡不需要重複記錄
                 tags = tag_suggester.suggest_tags(title=title, content=combined_content)
                 
                 # 初始化標籤列表，始終包含 featured 標籤
                 tag_ids = [136]  # "featured" 標籤的 ID
                 
+                # 記錄標籤建議狀態
                 if tags:
                     # 將 Assistant 返回的標籤轉換為 WordPress 標籤 ID
+                    logger.debug("開始轉換標籤為 WordPress 標籤 ID...")
                     additional_tags = wp.convert_tags_to_ids(tags)
+                    
                     if additional_tags:
                         tag_ids.extend(additional_tags)
+                        logger.debug(f"成功轉換 {len(additional_tags)} 個標籤")
                     else:
                         logger.warning("無法建立標籤，僅使用 featured 標籤")
                 else:
@@ -251,6 +272,12 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                 post_id = result.get('id')
                 if post_id:
                     draft_link = f"{wp.site_url}/wp-admin/post.php?post={post_id}&action=edit"
+                    
+                    # 將 WordPress 文章 ID 填入 I 欄位
+                    updates.append({
+                        'range': f'I{row_index}',
+                        'values': [[post_id]]
+                    })
                 else:
                     draft_link = result.get('link', '建立草稿失敗')
                     
@@ -266,14 +293,14 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                     'values': [['WordPress 錯誤']]
                 })
                 updates.append({
-                    'range': f'J{row_index}',
+                    'range': f'K{row_index}',
                     'values': [['error']]
                 })
                 raise wp_error
 
         # 5) 更新狀態為完成
         updates.append({
-            'range': f'J{row_index}',
+            'range': f'K{row_index}',
             'values': [['done']]
         })
 
@@ -282,7 +309,7 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
     except Exception as e:
         logger.error(f"處理失敗: {str(e)}")
         updates.append({
-            'range': f'J{row_index}',
+            'range': f'K{row_index}',
             'values': [['error']]
         })
         raise e
@@ -310,7 +337,7 @@ def check_pending_and_process(sheet):
 
         video_id_in_sheet = row[0].strip()
         youtube_url = row[3].strip()  # D欄
-        status = row[9].strip().lower()  # J欄
+        status = row[10].strip().lower()  # K欄
 
         if youtube_url and not video_id_in_sheet and status != 'done':
             assigned_id = next_id
@@ -318,7 +345,7 @@ def check_pending_and_process(sheet):
 
             # 先標記 pending
             updates.append({'range': f'A{i}', 'values': [[assigned_id]]})
-            updates.append({'range': f'J{i}', 'values': [['pending']]})
+            updates.append({'range': f'K{i}', 'values': [['pending']]})
 
             try:
                 process_one_row(i, youtube_url, assigned_id, sheet, updates, download_dir, wp)
