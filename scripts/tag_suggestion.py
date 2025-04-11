@@ -1,5 +1,6 @@
 from typing import Dict
 import os
+import re
 from openai import OpenAI
 from dotenv import load_dotenv
 import json
@@ -71,9 +72,26 @@ class TagSuggester:
         
         return self.wait_for_completion(thread_id, run.id)
         
-    def wait_for_completion(self, thread_id: str, run_id: str) -> Dict:
-        """等待處理完成並返回結果"""
+    def wait_for_completion(self, thread_id: str, run_id: str, timeout: int = 60) -> Dict:
+        """等待處理完成並返回結果
+        
+        Args:
+            thread_id: 對話的 thread ID
+            run_id: 處理的 run ID
+            timeout: 超時時間，預設 60 秒
+            
+        Returns:
+            處理結果字典
+        """
+        start_time = time.time()
+        
         while True:
+            # 檢查是否超時
+            if time.time() - start_time > timeout:
+                self.logger.error(f"標籤生成超時，已等待 {timeout} 秒")
+                # 返回一個預設的標籤結構，而不是空字典，確保即使超時也能繼續處理
+                return {"existing_tags": {"tags": {"general": ["video"]}}}
+                
             run = self.client.beta.threads.runs.retrieve(
                 thread_id=thread_id,
                 run_id=run_id
@@ -89,9 +107,44 @@ class TagSuggester:
                 last_message = messages.data[0]
                 if last_message.role == "assistant":
                     try:
-                        result = json.loads(last_message.content[0].text.value)
-                        return result
-                    except (json.JSONDecodeError, IndexError, AttributeError) as e:
+                        # 記錄原始回應內容以便調試
+                        raw_content = last_message.content[0].text.value
+                        self.logger.debug(f"原始回應內容: {raw_content}")
+                        
+                        # 嘗試解析 JSON
+                        try:
+                            result = json.loads(raw_content)
+                            self.logger.debug(f"成功解析 JSON 回應")
+                            return result
+                        except json.JSONDecodeError:
+                            # 如果不是有效的 JSON，嘗試尋找和提取 JSON 部分
+                            self.logger.warning("回應不是有效的 JSON，嘗試尋找 JSON 部分")
+                            
+                            # 尋找可能的 JSON 部分（在 ``` 或 {} 之間）
+                            json_pattern = r'```json\s*(.+?)\s*```|\{(.+?)\}'
+                            matches = re.findall(json_pattern, raw_content, re.DOTALL)
+                            
+                            if matches:
+                                for match in matches:
+                                    json_str = match[0] if match[0] else '{' + match[1] + '}'
+                                    try:
+                                        result = json.loads(json_str)
+                                        self.logger.debug(f"成功從文本中提取和解析 JSON")
+                                        return result
+                                    except json.JSONDecodeError:
+                                        continue
+                            
+                            # 如果仍然無法解析，創建一個預設的標籤結構
+                            self.logger.warning("無法解析任何 JSON，使用預設結構")
+                            
+                            # 嘗試從文本中提取標籤
+                            tags = re.findall(r'["\']([^"\',]+)["\']', raw_content)
+                            if tags:
+                                self.logger.debug(f"從文本中提取到標籤")
+                                return {"existing_tags": {"tags": {"general": tags}}}
+                            
+                            return {"existing_tags": {"tags": {"general": ["video"]}}}
+                    except (IndexError, AttributeError) as e:
                         self.logger.error(f"解析回應時發生錯誤: {str(e)}")
                         return {}
                         
@@ -107,7 +160,7 @@ class TagSuggester:
     def suggest_tags(self, title: str, content: str) -> Dict:
         """根據影片標題和內容生成標籤建議"""
         try:
-            self.logger.debug("開始處理標籤建議")
+            self.logger.info("開始生成標籤建議...")
             
             # 建立新的 thread
             thread = self.client.beta.threads.create()
@@ -129,11 +182,28 @@ class TagSuggester:
             )
             
             result = self.wait_for_completion(thread.id, run.id)
-            self.logger.info("設置標籤完成")
+            
+            # 檢查是否有標籤結果
+            if result and "existing_tags" in result:
+                tag_count = 0
+                # 計算所有標籤數量
+                if "tags" in result["existing_tags"]:
+                    for category in result["existing_tags"]["tags"].values():
+                        if isinstance(category, dict):
+                            for subcategory in category.values():
+                                if isinstance(subcategory, list):
+                                    tag_count += len(subcategory)
+                        elif isinstance(category, list):
+                            tag_count += len(category)
+                
+                self.logger.info(f"標籤生成完成，共產生 {tag_count} 個標籤")
+            else:
+                self.logger.info("標籤生成完成，但沒有產生標籤")
+                
             return result
             
         except Exception as e:
-            self.logger.error(f"發生錯誤: {str(e)}")
+            self.logger.error(f"生成標籤時發生錯誤: {str(e)}")
             return {}
 
 if __name__ == "__main__":
