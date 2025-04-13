@@ -402,3 +402,219 @@ class WordPressAPI:
         except Exception as e:
             self.logger.error(f"下載縮圖失敗：{str(e)}")
             return None
+            
+    def update_post_tags(self, post_id: int, tag_ids: List[int]) -> bool:
+        """更新文章的標籤
+        
+        Args:
+            post_id: 文章 ID
+            tag_ids: 標籤 ID 列表
+            
+        Returns:
+            bool: 更新是否成功
+        """
+        self.logger.debug(f"正在更新文章 {post_id} 的標籤: {tag_ids}")
+        endpoint = f"{self.api_base}/video/{post_id}"
+        
+        # 使用正確的分類法 video_tag
+        payload = {
+            "video_tag": tag_ids
+        }
+        
+        response = requests.post(
+            endpoint,
+            auth=self.auth,
+            headers=self.headers,
+            json=payload
+        )
+        
+        if response.status_code == 200:
+            # 確認標籤是否已關聯到文章
+            verify_response = requests.get(f"{endpoint}?_fields=video_tag", auth=self.auth, headers=self.headers)
+            if verify_response.status_code == 200:
+                data = verify_response.json()
+                if "video_tag" in data and data["video_tag"]:
+                    self.logger.debug(f"文章 {post_id} 的標籤已成功關聯: {data['video_tag']}")
+                else:
+                    self.logger.warning(f"文章 {post_id} 的標籤更新成功，但驗證時找不到標籤: {data}")
+            
+            return True
+        else:
+            self.logger.error(f"文章 {post_id} 的標籤更新失敗: {response.status_code}, {response.text}")
+            return False
+            
+    def convert_tags_to_ids(self, tags_data: Dict) -> List[int]:
+        """將標籤資料轉換為標籤 ID 列表
+        
+        Args:
+            tags_data: 標籤資料字典
+            
+        Returns:
+            List[int]: 標籤 ID 列表
+        """
+        tag_ids = []
+        
+        try:
+            # 取得所有標籤，使用 video_tag 分類法
+            all_tags_endpoint = f"{self.api_base}/video_tag?per_page=100"
+            response = requests.get(all_tags_endpoint, auth=self.auth, headers=self.headers)
+            
+            if response.status_code != 200:
+                self.logger.error(f"獲取標籤列表失敗: {response.status_code}")
+                return []
+                
+            all_tags = response.json()
+            tags_map = {tag['name'].lower(): tag['id'] for tag in all_tags}
+            
+            # 從 tags_data 中提取標籤
+            if "existing_tags" in tags_data and "tags" in tags_data["existing_tags"]:
+                # 處理已存在的標籤 - 多層結構
+                existing_tags = tags_data["existing_tags"]["tags"]
+                
+                # 處理主分類（人、事、時、地、物）
+                for main_category, subcategories in existing_tags.items():
+                    self.logger.debug(f"處理主分類: {main_category}")
+                    
+                    # 處理子分類
+                    if isinstance(subcategories, dict):
+                        for subcategory, tags in subcategories.items():
+                            self.logger.debug(f"處理子分類: {subcategory}, 標籤: {tags}")
+                            
+                            # 處理標籤列表
+                            if isinstance(tags, list):
+                                for tag in tags:
+                                    if not tag:  # 跳過空標籤
+                                        continue
+                                        
+                                    self.logger.debug(f"處理標籤: {tag}")
+                                    tag_name = tag.lower()
+                                    
+                                    if tag_name in tags_map:
+                                        self.logger.debug(f"標籤 '{tag}' 已存在，ID: {tags_map[tag_name]}")
+                                        tag_ids.append(tags_map[tag_name])
+                                    else:
+                                        # 如果標籤不存在，則建立新標籤
+                                        new_tag_id = self._create_tag(tag)
+                                        if new_tag_id:
+                                            tag_ids.append(new_tag_id)
+                                    
+            # 處理分類標籤
+            if "existing_tags" in tags_data and "categories" in tags_data["existing_tags"]:
+                for category, tags in tags_data["existing_tags"]["categories"].items():
+                    for tag in tags:
+                        tag_name = tag.lower()
+                        if tag_name in tags_map:
+                            tag_ids.append(tags_map[tag_name])
+                        else:
+                            # 如果標籤不存在，則建立新標籤
+                            new_tag_id = self._create_tag(tag)
+                            if new_tag_id:
+                                tag_ids.append(new_tag_id)
+                                
+            # 處理新建議的標籤
+            if "new_tag_suggestions" in tags_data and "tags" in tags_data["new_tag_suggestions"]:
+                # 處理新建議的標籤 - 多層結構
+                new_tags = tags_data["new_tag_suggestions"]["tags"]
+                
+                # 處理主分類（人、事、時、地、物）
+                for main_category, subcategories in new_tags.items():
+                    self.logger.debug(f"處理新標籤主分類: {main_category}")
+                    
+                    # 跳過空子分類
+                    if not subcategories:
+                        continue
+                        
+                    # 處理子分類
+                    if isinstance(subcategories, dict):
+                        for subcategory, tags in subcategories.items():
+                            self.logger.debug(f"處理新標籤子分類: {subcategory}, 標籤: {tags}")
+                            
+                            # 處理標籤列表
+                            if isinstance(tags, list):
+                                for tag in tags:
+                                    if not tag:  # 跳過空標籤
+                                        continue
+                                        
+                                    self.logger.debug(f"處理新標籤: {tag}")
+                                    tag_name = tag.lower()
+                                    
+                                    if tag_name in tags_map:
+                                        self.logger.debug(f"新標籤 '{tag}' 已存在，ID: {tags_map[tag_name]}")
+                                        tag_ids.append(tags_map[tag_name])
+                                    else:
+                                        # 如果標籤不存在，則建立新標籤
+                                        new_tag_id = self._create_tag(tag)
+                                        if new_tag_id:
+                                            tag_ids.append(new_tag_id)
+                    # 處理直接的標籤列表
+                    elif isinstance(subcategories, list):
+                        for tag in subcategories:
+                            if not tag:  # 跳過空標籤
+                                continue
+                                
+                            self.logger.debug(f"處理新標籤: {tag}")
+                            tag_name = tag.lower()
+                            
+                            if tag_name in tags_map:
+                                self.logger.debug(f"新標籤 '{tag}' 已存在，ID: {tags_map[tag_name]}")
+                                tag_ids.append(tags_map[tag_name])
+                            else:
+                                # 如果標籤不存在，則建立新標籤
+                                new_tag_id = self._create_tag(tag)
+                                if new_tag_id:
+                                    tag_ids.append(new_tag_id)
+            
+            # 確保標籤 ID 不重複
+            tag_ids = list(set(tag_ids))
+            self.logger.info(f"標籤處理完成，共 {len(tag_ids)} 個標籤")
+            return tag_ids
+            
+        except Exception as e:
+            self.logger.error(f"轉換標籤時發生錯誤: {str(e)}")
+            return []
+            
+    def _create_tag(self, tag_name: str) -> Optional[int]:
+        """建立新標籤
+        
+        Args:
+            tag_name: 標籤名稱
+            
+        Returns:
+            Optional[int]: 標籤 ID，如果建立失敗則返回 None
+        """
+        try:
+            self.logger.debug(f"正在建立新標籤: {tag_name}")
+            # 使用 video_tag 分類法 API 端點
+            endpoint = f"{self.api_base}/video_tag"
+            payload = {
+                "name": tag_name
+            }
+            
+            response = requests.post(
+                endpoint,
+                auth=self.auth,
+                headers=self.headers,
+                json=payload
+            )
+            
+            if response.status_code in [200, 201]:
+                tag_id = response.json().get('id')
+                self.logger.debug(f"標籤 '{tag_name}' 建立成功，ID: {tag_id}")
+                return tag_id
+            else:
+                # 檢查是否為「標籤已存在」的錯誤
+                try:
+                    error_data = response.json()
+                    if error_data.get('code') == 'term_exists' and 'data' in error_data and 'term_id' in error_data['data']:
+                        existing_tag_id = error_data['data']['term_id']
+                        self.logger.debug(f"標籤 '{tag_name}' 已存在，使用現有 ID: {existing_tag_id}")
+                        return existing_tag_id
+                except Exception as json_error:
+                    self.logger.error(f"解析標籤建立錯誤回應時發生錯誤: {str(json_error)}")
+                
+                self.logger.error(f"標籤 '{tag_name}' 建立失敗: {response.status_code}, {response.text}")
+                return None
+                    
+        except Exception as e:
+            self.logger.error(f"建立標籤 {tag_name} 時發生錯誤: {str(e)}")
+            return None

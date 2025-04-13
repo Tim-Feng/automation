@@ -14,11 +14,17 @@ class TagSuggester:
         self.logger.debug("初始化 TagSuggester...")
         
         # 取得專案根目錄
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.env_path = os.path.join(self.project_root, 'config', '.env')
         
         # 載入 .env 檔案
-        load_dotenv(os.path.join(project_root, 'config', '.env'))
-        self.logger.debug("已載入環境變數檔案")
+        self._load_env_variables()
+        
+    def _load_env_variables(self):
+        """重新載入環境變數"""
+        # 強制重新載入 .env 檔案
+        load_dotenv(self.env_path, override=True)
+        self.logger.debug(f"已重新載入環境變數檔案: {self.env_path}")
         
         # 檢查環境變數
         api_key = os.getenv("OPENAI_API_KEY")
@@ -31,6 +37,7 @@ class TagSuggester:
             
         self.logger.debug(f"使用 Assistant ID: {assistant_id}")
         
+        # 建立 OpenAI 客戶端
         self.client = OpenAI(api_key=api_key)
         self.assistant_id = assistant_id
         
@@ -160,26 +167,41 @@ class TagSuggester:
     def suggest_tags(self, title: str, content: str) -> Dict:
         """根據影片標題和內容生成標籤建議"""
         try:
-            self.logger.info("開始生成標籤建議...")
+            # 重新載入環境變數，確保使用最新的 API 金鑰
+            self._load_env_variables()
+            
+            self.logger.debug("開始生成標籤建議...")
             
             # 建立新的 thread
-            thread = self.client.beta.threads.create()
-            self.logger.debug(f"Thread ID: {thread.id}")
+            try:
+                thread = self.client.beta.threads.create()
+                self.logger.debug(f"Thread ID: {thread.id}")
+            except Exception as e:
+                self.logger.error(f"建立 Thread 失敗: {str(e)}")
+                raise
             
             # 添加訊息
-            message = self.client.beta.threads.messages.create(
-                thread_id=thread.id,
-                role="user",
-                content=f"標題：{title}\n內容：{content}"
-            )
-            self.logger.debug("已添加訊息")
+            try:
+                message = self.client.beta.threads.messages.create(
+                    thread_id=thread.id,
+                    role="user",
+                    content=f"標題：{title}\n內容：{content}"
+                )
+                self.logger.debug("已添加訊息")
+            except Exception as e:
+                self.logger.error(f"添加訊息失敗: {str(e)}")
+                raise
             
             # 開始運行 assistant
             self.logger.debug("開始運行 assistant")
-            run = self.client.beta.threads.runs.create(
-                thread_id=thread.id,
-                assistant_id=self.assistant_id
-            )
+            try:
+                run = self.client.beta.threads.runs.create(
+                    thread_id=thread.id,
+                    assistant_id=self.assistant_id
+                )
+            except Exception as e:
+                self.logger.error(f"運行 Assistant 失敗: {str(e)}")
+                raise
             
             result = self.wait_for_completion(thread.id, run.id)
             
@@ -196,9 +218,9 @@ class TagSuggester:
                         elif isinstance(category, list):
                             tag_count += len(category)
                 
-                self.logger.info(f"標籤生成完成，共產生 {tag_count} 個標籤")
+                self.logger.debug(f"標籤生成完成，共產生 {tag_count} 個標籤")
             else:
-                self.logger.info("標籤生成完成，但沒有產生標籤")
+                self.logger.debug("標籤生成完成，但沒有產生標籤")
                 
             return result
             
