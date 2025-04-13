@@ -29,13 +29,13 @@ class GeminiVideoAnalyzer:
         self.model = "gemini-1.5-pro"  # 使用成功測試的模型
         logger.debug(f"初始化 Gemini Video Analyzer，使用模型: {self.model}")
     
-    def analyze_youtube_video(self, youtube_url: str, title: str = "", max_retries: int = 3, use_wordpress_format: bool = True) -> Optional[str]:
+    def analyze_youtube_video(self, youtube_url: str, title: str = "", max_retries: int = 10, use_wordpress_format: bool = True) -> Optional[str]:
         """直接分析 YouTube 影片
         
         Args:
             youtube_url: YouTube 影片網址
             title: 影片標題，可選
-            max_retries: 最大重試次數，預設為 3
+            max_retries: 最大重試次數，預設為 10
             use_wordpress_format: 是否使用 WordPress 古騰堡格式，預設為 True
             
         Returns:
@@ -135,7 +135,7 @@ class GeminiVideoAnalyzer:
             except Exception as e:
                 logger.error(f"分析 YouTube 影片時發生錯誤: {str(e)}")
                 if attempt < max_retries - 1:
-                    wait_time = 5  # 等待 5 秒後重試
+                    wait_time = 30  # 等待 30 秒後重試
                     logger.info(f"等待 {wait_time} 秒後重試...")
                     time.sleep(wait_time)
         
@@ -218,13 +218,13 @@ class GeminiVideoAnalyzer:
         # 如果是從 gemini_video_analyzer.py 或 test_single_video.py 執行，都視為命令列執行
         return sys.argv[0].endswith('gemini_video_analyzer.py') or sys.argv[0].endswith('test_single_video.py')
         
-    def analyze_video_file(self, video_file_path: str, title: str = "", max_retries: int = 3, use_wordpress_format: bool = True) -> Optional[str]:
+    def analyze_video_file(self, video_file_path: str, title: str = "", max_retries: int = 10, use_wordpress_format: bool = True) -> Optional[str]:
         """分析本地影片檔案
         
         Args:
             video_file_path: 本地影片檔案路徑
             title: 影片標題，可選
-            max_retries: 最大重試次數，預設為 3
+            max_retries: 最大重試次數，預設為 10
             use_wordpress_format: 是否使用 WordPress 古騰堡格式，預設為 True
             
         Returns:
@@ -299,7 +299,7 @@ class GeminiVideoAnalyzer:
             except Exception as e:
                 logger.error(f"分析本地影片檔案時發生錯誤: {str(e)}")
                 if attempt < max_retries - 1:
-                    wait_time = 5  # 等待 5 秒後重試
+                    wait_time = 30  # 等待 30 秒後重試
                     logger.info(f"等待 {wait_time} 秒後重試...")
                     time.sleep(wait_time)
         
