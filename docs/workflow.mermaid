@@ -8,7 +8,8 @@ flowchart TB
     subgraph "1️⃣ 前置處理"
         A[stage1-preparation.applescript] -->|自動化處理| A1[從 Google Sheets 擷取資訊]
         A1 --> A2[下載 YouTube 影片]
-        A2 --> A3[建立 WordPress 草稿]
+        A2 --> A21[使用 Gemini 分析影片]
+        A21 --> A3[建立 WordPress 草稿]
         A3 --> A31[下載並壓縮 YouTube 縮圖]
         A31 --> A32[設定為文章特色圖片]
         A32 --> A4[使用 OpenAI 生成標籤]
@@ -17,6 +18,9 @@ flowchart TB
         A -->|使用| AC[logger.py]
         A -->|使用| AD[tag_suggestion.py]
         A -->|使用| AE[perplexity_client.py]
+        A -->|使用| AF[gemini_video_analyzer.py]
+        A -->|使用| AG[pre_production_pipeline.py]
+        A -->|使用| AH[batch_video_description.py]
         AC -->|統一日誌系統| ACL[log_bridge.py]
     end
 
@@ -64,6 +68,12 @@ flowchart TB
         DC -->|統一日誌系統| DCL[log_bridge.py]
     end
 
+    subgraph "🔧 調試工具"
+        T1[tools/check_sheet_row.py] -->|診斷| T11[檢查 Google Sheets 資料]
+        T2[tools/test_tag_update.py] -->|測試| T21[測試標籤更新功能]
+        T3[tools/test_video_description_meta.py] -->|測試| T31[測試影片描述欄位]
+    end
+
     %% 主要流程連接
     DEP -->|依賴檢查| A
     A -->|完成| B
@@ -74,9 +84,11 @@ flowchart TB
     classDef subProcess fill:#9cf,stroke:#333,stroke-width:1px;
     classDef utility fill:#fcf,stroke:#333,stroke-width:1px;
     classDef logger fill:#cfc,stroke:#333,stroke-width:1px;
+    classDef tools fill:#ff9,stroke:#333,stroke-width:1px;
     
     class A,B,C,D mainScript;
-    class A1,A2,A3,A31,A32,A4,B1,B2,B3,B4,B5,B6,C1,C2,C3,C4,C5,C6,C7,C8,D1,D2,D3 subProcess;
-    class AA,AB,AC,AD,AE,BA,BB,BC,BD,CA,CB,CC,CD,CE,CF,DA,DB,DC,DD utility;
+    class A1,A2,A21,A3,A31,A32,A4,B1,B2,B3,B4,B5,B6,C1,C2,C3,C4,C5,C6,C7,C8,D1,D2,D3 subProcess;
+    class AA,AB,AC,AD,AE,AF,AG,AH,BA,BB,BC,BD,CA,CB,CC,CD,CE,CF,DA,DB,DC,DD utility;
     class ACL,BCL,CEL,DCL logger;
     class DEP,DEP1,DEP2,DEP3 utility;
+    class T1,T2,T3,T11,T21,T31 tools;
