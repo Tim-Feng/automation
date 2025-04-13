@@ -292,7 +292,7 @@ def process_one_row(row_index, youtube_url, assigned_id, sheet, updates, downloa
                 # 如果有原始影片描述，將其添加到 meta 資料中
                 if raw_video_description:
                     meta_data['video_description'] = raw_video_description
-                    logger.info(f"將原始影片描述保存到 post_meta 欄位")
+                    logger.info(f"將原始影片描述保存到 video_description 欄位")
                 
                 # 注意：文章內容只使用 Perplexity 的結果，不包含 Gemini 的影片描述
                 result = wp.create_draft(
