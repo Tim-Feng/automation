@@ -26,7 +26,7 @@ class GeminiVideoAnalyzer:
         
         # 初始化 Gemini 客戶端
         self.client = genai.Client(api_key=self.api_key)
-        self.model = "gemini-1.5-pro"  # 使用成功測試的模型
+        self.model = "gemini-1.5-flash"  # 使用配額較高的模型
         logger.debug(f"初始化 Gemini Video Analyzer，使用模型: {self.model}")
     
     def analyze_youtube_video(self, youtube_url: str, title: str = "", max_retries: int = 10, use_wordpress_format: bool = True) -> Optional[str]:

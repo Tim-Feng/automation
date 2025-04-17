@@ -56,7 +56,8 @@ class PerplexityClient:
         return '\n\n'.join(formatted_content)
 
     def search(self, title: str) -> str:
-        """使用影片標題進行搜索並返回格式化的內容"""
+        """使用影片標題進行搜索並返回格式化的內容（含指數退避重試）"""
+        import time
         prompt = f"""請想像這是一個專業廣告影片平台的作品介紹，需要吸引觀眾又傳達重要資訊。所有資訊必須準確且有來源依據，並使用流暢的敘事方式，描述以下這支廣告影片：
 
 {title}
@@ -93,35 +94,62 @@ class PerplexityClient:
 嚴格檢查：
 回覆前再次確認所有資訊與格式是否符合以上規範，尤其需要避免使用中國用語和翻譯。"""
 
+        retry_intervals = [5, 10, 20, 40, 80]  # 秒，指數退避
+        last_exception = None
+        for attempt, wait_time in enumerate(retry_intervals, 1):
+            try:
+                payload = {
+                    "model": "sonar",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.7,
+                    "max_tokens": 1024
+                }
+                response = requests.post(
+                    self.base_url,
+                    headers=self.headers,
+                    json=payload,
+                    timeout=30
+                )
+                if response.status_code == 200:
+                    response_data = response.json()
+                    formatted_content = self.format_response(response_data['choices'][0]['message']['content'])
+                    logger.debug(f"成功獲取並格式化「{title}」的相關資訊")
+                    return formatted_content
+                else:
+                    logger.error(f"[重試 {attempt}/5] Perplexity API 請求失敗: {response.status_code}")
+                    logger.error(f"[重試 {attempt}/5] 錯誤訊息: {response.text}")
+            except Exception as e:
+                logger.error(f"[重試 {attempt}/5] 搜索過程發生錯誤: {str(e)}")
+                last_exception = e
+            if attempt < len(retry_intervals):
+                logger.info(f"{wait_time} 秒後重試...")
+                time.sleep(wait_time)
+        # 全部重試失敗，寫入 failed_jobs.json
+        self._record_failed_job(title, last_exception)
+        return None
+
+    def _record_failed_job(self, title, exception):
+        """將失敗的搜尋任務記錄到 failed_jobs.json"""
+        import datetime
+        failed_job = {
+            "title": title,
+            "error": str(exception) if exception else "Unknown error",
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        failed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../logs/failed_jobs.json')
         try:
-            payload = {
-                "model": "sonar",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.7,
-                "max_tokens": 1024
-            }
-
-            response = requests.post(
-                self.base_url,
-                headers=self.headers,
-                json=payload,
-                timeout=30
-            )
-            
-            if response.status_code != 200:
-                logger.error(f"Perplexity API 請求失敗: {response.status_code}")
-                logger.error(f"錯誤訊息: {response.text}")
-                return None
-
-            response_data = response.json()
-            formatted_content = self.format_response(response_data['choices'][0]['message']['content'])
-            
-            logger.debug(f"成功獲取並格式化「{title}」的相關資訊")
-            return formatted_content
-
+            if os.path.exists(failed_path):
+                with open(failed_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            else:
+                data = []
+            data.append(failed_job)
+            with open(failed_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            logger.error(f"已寫入失敗任務至 failed_jobs.json: {title}")
         except Exception as e:
-            logger.error(f"搜索過程發生錯誤: {str(e)}")
-            return None
+            logger.error(f"寫入 failed_jobs.json 時發生錯誤: {str(e)}")
+
 
 def main():
     """測試用主函數"""

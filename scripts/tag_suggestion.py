@@ -165,68 +165,99 @@ class TagSuggester:
             time.sleep(1)
         
     def suggest_tags(self, title: str, content: str) -> Dict:
-        """根據影片標題和內容生成標籤建議"""
+        """根據影片標題和內容生成標籤建議，含指數退避重試機制"""
+        retry_intervals = [5, 10, 20, 40, 80]  # 秒
+        last_exception = None
+        for attempt, wait_time in enumerate(retry_intervals, 1):
+            try:
+                self._load_env_variables()
+                self.logger.debug(f"[嘗試第 {attempt} 次] 開始生成標籤建議...")
+
+                # 建立新的 thread
+                try:
+                    thread = self.client.beta.threads.create()
+                    self.logger.debug(f"Thread ID: {thread.id}")
+                except Exception as e:
+                    self.logger.error(f"建立 Thread 失敗: {str(e)}")
+                    raise
+
+                # 添加訊息
+                try:
+                    message = self.client.beta.threads.messages.create(
+                        thread_id=thread.id,
+                        role="user",
+                        content=f"標題：{title}\n內容：{content}"
+                    )
+                    self.logger.debug("已添加訊息")
+                except Exception as e:
+                    self.logger.error(f"添加訊息失敗: {str(e)}")
+                    raise
+
+                # 開始運行 assistant
+                self.logger.debug("開始運行 assistant")
+                try:
+                    run = self.client.beta.threads.runs.create(
+                        thread_id=thread.id,
+                        assistant_id=self.assistant_id
+                    )
+                except Exception as e:
+                    self.logger.error(f"運行 Assistant 失敗: {str(e)}")
+                    raise
+
+                result = self.wait_for_completion(thread.id, run.id)
+
+                # 檢查是否有標籤結果
+                if result and "existing_tags" in result:
+                    tag_count = 0
+                    # 計算所有標籤數量
+                    if "tags" in result["existing_tags"]:
+                        for category in result["existing_tags"]["tags"].values():
+                            if isinstance(category, dict):
+                                for subcategory in category.values():
+                                    if isinstance(subcategory, list):
+                                        tag_count += len(subcategory)
+                            elif isinstance(category, list):
+                                tag_count += len(category)
+                    self.logger.debug(f"標籤生成完成，共產生 {tag_count} 個標籤")
+                else:
+                    self.logger.debug("標籤生成完成，但沒有產生標籤")
+                return result
+
+            except Exception as e:
+                last_exception = e
+                self.logger.error(f"[嘗試第 {attempt} 次] 生成標籤時發生錯誤: {str(e)}")
+                if attempt < len(retry_intervals):
+                    self.logger.info(f"等待 {wait_time} 秒後重試...")
+                    time.sleep(wait_time)
+                else:
+                    self.logger.error("已達到最大重試次數，將記錄失敗任務。")
+                    self._record_failed_job(title, content, e)
+                    # fallback: 回傳預設標籤結構，避免流程卡住
+                    return {"existing_tags": {"tags": {"general": ["video"]}}}
+
+    def _record_failed_job(self, title, content, exception):
+        """記錄失敗的標籤生成任務到 failed_jobs.json"""
+        import datetime
+        failed_job = {
+            "title": title,
+            "content": content,
+            "error": str(exception),
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        failed_jobs_path = os.path.join(self.project_root, "logs", "failed_jobs.json")
         try:
-            # 重新載入環境變數，確保使用最新的 API 金鑰
-            self._load_env_variables()
-            
-            self.logger.debug("開始生成標籤建議...")
-            
-            # 建立新的 thread
-            try:
-                thread = self.client.beta.threads.create()
-                self.logger.debug(f"Thread ID: {thread.id}")
-            except Exception as e:
-                self.logger.error(f"建立 Thread 失敗: {str(e)}")
-                raise
-            
-            # 添加訊息
-            try:
-                message = self.client.beta.threads.messages.create(
-                    thread_id=thread.id,
-                    role="user",
-                    content=f"標題：{title}\n內容：{content}"
-                )
-                self.logger.debug("已添加訊息")
-            except Exception as e:
-                self.logger.error(f"添加訊息失敗: {str(e)}")
-                raise
-            
-            # 開始運行 assistant
-            self.logger.debug("開始運行 assistant")
-            try:
-                run = self.client.beta.threads.runs.create(
-                    thread_id=thread.id,
-                    assistant_id=self.assistant_id
-                )
-            except Exception as e:
-                self.logger.error(f"運行 Assistant 失敗: {str(e)}")
-                raise
-            
-            result = self.wait_for_completion(thread.id, run.id)
-            
-            # 檢查是否有標籤結果
-            if result and "existing_tags" in result:
-                tag_count = 0
-                # 計算所有標籤數量
-                if "tags" in result["existing_tags"]:
-                    for category in result["existing_tags"]["tags"].values():
-                        if isinstance(category, dict):
-                            for subcategory in category.values():
-                                if isinstance(subcategory, list):
-                                    tag_count += len(subcategory)
-                        elif isinstance(category, list):
-                            tag_count += len(category)
-                
-                self.logger.debug(f"標籤生成完成，共產生 {tag_count} 個標籤")
+            if os.path.exists(failed_jobs_path):
+                with open(failed_jobs_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
             else:
-                self.logger.debug("標籤生成完成，但沒有產生標籤")
-                
-            return result
-            
+                data = []
+            data.append(failed_job)
+            with open(failed_jobs_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            self.logger.info(f"已將失敗任務寫入 {failed_jobs_path}")
         except Exception as e:
-            self.logger.error(f"生成標籤時發生錯誤: {str(e)}")
-            return {}
+            self.logger.error(f"寫入失敗任務時發生錯誤: {str(e)}")
+
 
 if __name__ == "__main__":
     # 測試用例

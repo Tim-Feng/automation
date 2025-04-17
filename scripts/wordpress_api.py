@@ -15,6 +15,26 @@ from io import BytesIO
 
 class WordPressAPI:
 
+    def delete_post(self, post_id: int) -> bool:
+        """刪除指定 ID 的影片文章（自訂型別 video）
+        Args:
+            post_id: 文章 ID
+        Returns:
+            bool: 刪除是否成功
+        """
+        endpoint = f"{self.api_base}/video/{post_id}"
+        try:
+            response = requests.delete(endpoint, auth=self.auth, headers=self.headers)
+            if response.status_code in [200, 204]:
+                self.logger.info(f"已成功刪除文章 {post_id}")
+                return True
+            else:
+                self.logger.error(f"刪除文章 {post_id} 失敗: {response.status_code}, {response.text}")
+                return False
+        except Exception as e:
+            self.logger.error(f"刪除文章 {post_id} 時發生錯誤: {str(e)}")
+            return False
+
     def __init__(self, logger):
         """初始化 WordPress API 客戶端"""
         self.logger = logger
