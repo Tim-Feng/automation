@@ -341,9 +341,17 @@ class GoogleDriveAPI:
         try:
             # 檢查是否為複合影片
             file_base_name = os.path.splitext(file_name)[0]
+            file_ext = os.path.splitext(file_name)[1].lower()
             
+            # 如果是封面圖（_cover.jpg），直接上傳，不要當作複合影片處理
+            if file_base_name.endswith('_cover') or file_ext == '.jpg':
+                logger.debug(f"處理封面圖：{file_name}")
+                # 檢查檔案是否存在
+                if not os.path.exists(file_path):
+                    raise FileNotFoundError(f"封面圖檔案不存在：{file_path}")
+                return self._upload_single_file(file_path, file_name, folder_id)
             # 如果是轉檔後的影片（包含 -1920*1340 等格式），直接上傳
-            if '*' in file_base_name:
+            elif '*' in file_base_name:
                 logger.debug(f"處理轉檔後影片：{file_base_name}")
                 return self._upload_single_file(file_path, file_name, folder_id)
             # 如果是原始複合影片（沒有 * 但有 + 或 -）

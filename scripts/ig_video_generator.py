@@ -53,20 +53,11 @@ def generate_ig_video(input_video, output_path, texts, font_path):
         raise
 
 def get_video_id(input_path: str) -> str:
-    """從輸入路徑中提取影片 ID"""
+    """從輸入路徑中提取影片 ID，支援單一、連號、多個 ID 組合"""
     filename = Path(input_path).stem
-    
-    # 先檢查是否為範圍或組合影片
-    range_match = re.match(r'^(\d+[-+]\d+)-\d+\*\d+(?:-[a-z]+)?$', filename)
-    if range_match:
-        return range_match.group(1)
-    
-    # 如果不是範圍或組合影片，則檢查是否為單支影片
-    single_match = re.match(r'^(\d+)-\d+\*\d+(?:-[a-z]+)?$', filename)
-    if single_match:
-        return single_match.group(1)
-    
-    return filename
+    # 從後面移除尺寸標記（-1920*1340 或 -1920*1340-zh）
+    cleaned = re.sub(r'-\d+\*\d+(?:-[a-z]+)?$', '', filename)
+    return cleaned
 
 def main():
     parser = argparse.ArgumentParser(description='生成 IG 影片')

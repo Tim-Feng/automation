@@ -80,6 +80,9 @@ class TagSuggester:
         return self.wait_for_completion(thread_id, run.id)
         
     def wait_for_completion(self, thread_id: str, run_id: str, timeout: int = 60) -> Dict:
+        """
+        等待處理完成並返回結果，若遇到 expired/failed/cancelled 或結果為空/['video']/格式錯誤則 raise Exception 進入重試
+        """
         """等待處理完成並返回結果
         
         Args:
@@ -96,8 +99,7 @@ class TagSuggester:
             # 檢查是否超時
             if time.time() - start_time > timeout:
                 self.logger.error(f"標籤生成超時，已等待 {timeout} 秒")
-                # 返回一個預設的標籤結構，而不是空字典，確保即使超時也能繼續處理
-                return {"existing_tags": {"tags": {"general": ["video"]}}}
+                raise TimeoutError(f"Tag suggestion timeout after {timeout} seconds")
                 
             run = self.client.beta.threads.runs.retrieve(
                 thread_id=thread_id,
@@ -122,51 +124,51 @@ class TagSuggester:
                         try:
                             result = json.loads(raw_content)
                             self.logger.debug(f"成功解析 JSON 回應")
-                            return result
-                        except json.JSONDecodeError:
+                        except json.JSONDecodeError as e:
                             # 如果不是有效的 JSON，嘗試尋找和提取 JSON 部分
                             self.logger.warning("回應不是有效的 JSON，嘗試尋找 JSON 部分")
-                            
-                            # 尋找可能的 JSON 部分（在 ``` 或 {} 之間）
                             json_pattern = r'```json\s*(.+?)\s*```|\{(.+?)\}'
                             matches = re.findall(json_pattern, raw_content, re.DOTALL)
-                            
+                            result = None
                             if matches:
                                 for match in matches:
                                     json_str = match[0] if match[0] else '{' + match[1] + '}'
                                     try:
                                         result = json.loads(json_str)
                                         self.logger.debug(f"成功從文本中提取和解析 JSON")
-                                        return result
+                                        break
                                     except json.JSONDecodeError:
                                         continue
-                            
-                            # 如果仍然無法解析，創建一個預設的標籤結構
-                            self.logger.warning("無法解析任何 JSON，使用預設結構")
-                            
-                            # 嘗試從文本中提取標籤
-                            tags = re.findall(r'["\']([^"\',]+)["\']', raw_content)
-                            if tags:
-                                self.logger.debug(f"從文本中提取到標籤")
-                                return {"existing_tags": {"tags": {"general": tags}}}
-                            
-                            return {"existing_tags": {"tags": {"general": ["video"]}}}
-                    except (IndexError, AttributeError) as e:
+                            if not result:
+                                # 嘗試從文本中提取標籤
+                                tags = re.findall(r'["\']([^"\',]+)["\']', raw_content)
+                                if tags:
+                                    self.logger.debug(f"從文本中提取到標籤")
+                                    result = {"existing_tags": {"tags": {"general": tags}}}
+                                else:
+                                    raise ValueError("無法解析任何 JSON 或標籤")
+                        # 驗證結果內容
+                        if (not result or
+                            ("existing_tags" in result and
+                             "tags" in result["existing_tags"] and
+                             "general" in result["existing_tags"]["tags"] and
+                             result["existing_tags"]["tags"]["general"] == ["video"])):
+                            raise ValueError("標籤結果為空或僅有 ['video']")
+                        return result
+                    except (IndexError, AttributeError, ValueError, json.JSONDecodeError) as e:
                         self.logger.error(f"解析回應時發生錯誤: {str(e)}")
-                        return {}
+                        raise e
                         
             elif run.status == "requires_action":
                 return self.handle_required_action(thread_id, run_id)
-                
             elif run.status in ["failed", "expired", "cancelled"]:
                 self.logger.error(f"處理失敗，狀態為 {run.status}")
-                return {}
-                
+                raise RuntimeError(f"Tag suggestion failed with status: {run.status}")
             time.sleep(1)
         
     def suggest_tags(self, title: str, content: str) -> Dict:
         """根據影片標題和內容生成標籤建議，含指數退避重試機制"""
-        retry_intervals = [5, 10, 20, 40, 80]  # 秒
+        retry_intervals = [5, 10, 20, 40, 80]  # 指數退避，最多 5 次
         last_exception = None
         for attempt, wait_time in enumerate(retry_intervals, 1):
             try:
@@ -205,8 +207,7 @@ class TagSuggester:
                     raise
 
                 result = self.wait_for_completion(thread.id, run.id)
-
-                # 檢查是否有標籤結果
+                # 檢查是否有標籤結果（這裡的空值或只有 ['video'] 已在 wait_for_completion 處理）
                 if result and "existing_tags" in result:
                     tag_count = 0
                     # 計算所有標籤數量

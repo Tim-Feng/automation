@@ -100,8 +100,8 @@ class BatchProcessor:
         # 每次呼叫之間加入短暫延遲，避免過於頻繁的請求
         time.sleep(random.uniform(0.5, 2))
         
-    def _get_pending_rows(self, batch_size: int = 5) -> List[Dict]:
-        """獲取待處理的資料列"""
+    def _get_pending_rows(self, batch_size: int = 5, row_range: tuple = None) -> List[Dict]:
+        """獲取待處理的資料列，可指定 row 範圍"""
         try:
             # 獲取所有資料
             all_values = self.sheet.get_all_values()
@@ -110,13 +110,17 @@ class BatchProcessor:
             # 篩選出待處理的資料列
             pending_rows = []
             for i, row in enumerate(all_values[1:], start=2):  # 從第 2 列開始（標題列為第 1 列）
+                if row_range:
+                    if i < row_range[0] or i > row_range[1]:
+                        continue
                 # 使用欄位對應取得資料
                 youtube_url = row[ord(self.column_mapping['youtube_link']) - ord('A')]
+                wp_link = row[ord(self.column_mapping['wp_link']) - ord('A')]
                 wp_id = row[ord(self.column_mapping['wp_id']) - ord('A')]
                 video_description_status = row[ord(self.column_mapping['video_description_status']) - ord('A')]
                 
                 # 檢查是否符合處理條件
-                if (wp_id and youtube_url and 
+                if (wp_id and youtube_url and wp_link and
                     (not video_description_status or 
                      video_description_status == 'pending' or 
                      video_description_status == 'failed')):
@@ -476,9 +480,9 @@ class BatchProcessor:
             except:
                 pass
                 
-    def process_batch(self, batch_size: int = 5):
-        """處理一批影片"""
-        pending_rows = self._get_pending_rows(batch_size)
+    def process_batch(self, batch_size: int = 5, row_range: tuple = None):
+        """處理一批影片，可指定 row 範圍"""
+        pending_rows = self._get_pending_rows(batch_size, row_range=row_range)
         
         for row in pending_rows:
             row_index = row['index']
@@ -520,13 +524,13 @@ class BatchProcessor:
                 logger.exception(f"處理第 {row_index} 列時發生錯誤: {str(e)}")
                 self._update_row_status(row_index, 'video_description_status', 'failed')
                 
-    def run(self, total_batches: int = 10, batch_size: int = 5):
-        """執行批次處理"""
-        logger.info(f"開始批次處理，總批次: {total_batches}, 每批次大小: {batch_size}")
+    def run(self, total_batches: int = 10, batch_size: int = 5, row_range: tuple = None):
+        """執行批次處理，可指定 row 範圍"""
+        logger.info(f"開始批次處理，總批次: {total_batches}, 每批次大小: {batch_size}, row_range: {row_range}")
         
         for batch in range(total_batches):
             logger.info(f"處理批次 {batch + 1}/{total_batches}")
-            self.process_batch(batch_size)
+            self.process_batch(batch_size, row_range=row_range)
             
             # 批次之間加入延遲
             time.sleep(random.uniform(5, 10))
@@ -538,9 +542,19 @@ def main():
     parser.add_argument('--batches', type=int, default=10, help='處理批次數')
     parser.add_argument('--batch-size', type=int, default=5, help='每批次處理數量')
     parser.add_argument('--row', type=int, help='指定處理的 Google Sheets 行數')
+    parser.add_argument('--row-range', type=str, help='指定處理的 Google Sheets 行數區間，例如 5000-5100')
     args = parser.parse_args()
     
     processor = BatchProcessor()
+    
+    row_range = None
+    if args.row_range:
+        try:
+            start, end = [int(x) for x in args.row_range.split('-')]
+            row_range = (start, end)
+        except Exception:
+            logger.error('row-range 格式錯誤，應為 5000-5100')
+            return
     
     if args.row:
         # 處理指定行數
@@ -548,7 +562,7 @@ def main():
         processor.process_specific_row(args.row)
     else:
         # 批次處理
-        processor.run(args.batches, args.batch_size)
+        processor.run(args.batches, args.batch_size, row_range=row_range)
     
 if __name__ == "__main__":
     main()
