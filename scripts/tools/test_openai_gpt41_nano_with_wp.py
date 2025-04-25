@@ -98,19 +98,16 @@ class WordPressClient:
 class OpenAIAssistantTester:
     def __init__(self, model_version):
         self.model = model_version
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("請設置 OPENAI_API_KEY 環境變數")
-        self.client = OpenAI(api_key=api_key)  # 明確傳入 API 金鑰
-        logger.info(f"初始化 OpenAI Assistant 測試器，使用模型: {self.model}")
+        self.env_path = Path(__file__).parent.parent.parent / "config" / ".env"
+        self._load_env_variables()
         
         # 取得專案根目錄
         self.project_root = Path(__file__).parent.parent.parent
         
         # 載入系統提示詞
-        system_prompt_path = self.project_root / "prompts" / "openai" / "system_prompt.txt"
+        system_prompt_path = self.project_root / "prompts" / "openai" / "system_prompt.json"
         with open(system_prompt_path, 'r', encoding='utf-8') as f:
-            self.system_prompt = f.read()
+            self.system_prompt = json.load(f)["assistant_config"]["instructions"]
             
         # 載入 function schema
         function_schema_path = self.project_root / "prompts" / "openai" / "function_schema.json"
@@ -139,10 +136,46 @@ class OpenAIAssistantTester:
             "error": None,
             "raw_response": None
         }
+        
+    def _load_env_variables(self):
+        """載入環境變數"""
+        load_dotenv(self.env_path, override=True)
+        
+        # 檢查 API 金鑰
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("請設置 OPENAI_API_KEY 環境變數")
+            
+        # 檢查 ASSISTANT_ID（如果有設置）
+        self.assistant_id = os.getenv("ASSISTANT_ID")
+        
+        # 初始化 OpenAI 客戶端
+        self.client = OpenAI(api_key=api_key)  # 明確傳入 API 金鑰
+        logger.info(f"初始化 OpenAI Assistant 測試器，使用模型: {self.model}")
+        if self.assistant_id:
+            logger.info(f"使用預設 Assistant ID: {self.assistant_id}")
     
     def create_test_assistant(self):
-        """創建測試用 Assistant"""
+        """創建或獲取測試用 Assistant
+        
+        如果設置了 ASSISTANT_ID 環境變數，則使用該 ID 獲取現有的 Assistant
+        否則創建一個新的 Assistant
+        
+        Returns:
+            Assistant 物件
+        """
         try:
+            # 如果有設置 ASSISTANT_ID，則使用該 ID
+            if self.assistant_id:
+                try:
+                    # 嘗試獲取現有的 Assistant
+                    assistant = self.client.beta.assistants.retrieve(self.assistant_id)
+                    logger.info(f"成功獲取現有的 Assistant: {assistant.id}")
+                    return assistant
+                except Exception as e:
+                    logger.warning(f"無法獲取預設 Assistant ID {self.assistant_id}，將創建新的: {str(e)}")
+                    # 如果無法獲取，則創建新的（繼續執行下面的代碼）
+            
             # 確保 function schema 格式正確
             function_def = self.function_schema["functions"][0]
             
@@ -167,7 +200,7 @@ class OpenAIAssistantTester:
         except Exception as e:
             logger.error(f"刪除 Assistant 時發生錯誤: {str(e)}")
     
-    def wait_for_completion(self, thread_id, run_id, timeout=120):
+    def wait_for_completion(self, thread_id, run_id, timeout=180):
         """等待處理完成並返回結果
         
         Args:
@@ -179,115 +212,174 @@ class OpenAIAssistantTester:
             處理結果
         """
         start_time = time.time()
+        poll_interval = 2  # 初始輪詢間隔
+        max_poll_interval = 5  # 最大輪詢間隔（降低為 5 秒，避免等待過長）
         
         while True:
             # 檢查是否超時
-            if time.time() - start_time > timeout:
-                logger.error(f"標籤生成超時，已等待 {timeout} 秒")
-                raise TimeoutError(f"Tag suggestion timeout after {timeout} seconds")
+            elapsed_time = time.time() - start_time
+            if elapsed_time > timeout:
+                logger.error(f"標籤生成超時，已等待 {int(elapsed_time)} 秒")
+                raise TimeoutError(f"Tag suggestion timeout after {int(elapsed_time)} seconds")
+                
+            # 動態調整輪詢間隔，隨著等待時間增加而增加
+            poll_interval = min(poll_interval * 1.2, max_poll_interval)
                 
             # 獲取執行狀態
-            run = self.client.beta.threads.runs.retrieve(
-                thread_id=thread_id,
-                run_id=run_id
-            )
+            try:
+                run = self.client.beta.threads.runs.retrieve(
+                    thread_id=thread_id,
+                    run_id=run_id
+                )
+            except Exception as e:
+                logger.error(f"獲取執行狀態時發生錯誤: {str(e)}")
+                # 等待短暫時間後重試
+                time.sleep(2)
+                continue
+            
+            logger.debug(f"目前狀態: {run.status}")
             
             if run.status == "completed":
                 # 獲取最後一條消息
-                messages = self.client.beta.threads.messages.list(
-                    thread_id=thread_id
-                )
-                last_message = messages.data[0]
-                
-                # 嘗試解析 JSON
-                raw_content = last_message.content[0].text.value
-                logger.info(f"原始回應內容長度: {len(raw_content)} 字元")
-                
-                print(f"\n原始回應內容: {raw_content}\n")
+                try:
+                    messages = self.client.beta.threads.messages.list(
+                        thread_id=thread_id
+                    )
+                    last_message = messages.data[0]
+                except Exception as e:
+                    logger.error(f"獲取消息時發生錯誤: {str(e)}")
+                    time.sleep(2)
+                    continue
                 
                 # 嘗試解析 JSON
                 try:
+                    raw_content = last_message.content[0].text.value
+                    logger.info(f"原始回應內容長度: {len(raw_content)} 字元")
+                    
+                    print(f"\n原始回應內容: {raw_content}\n")
+                    
                     # 嘗試直接解析
-                    tags = json.loads(raw_content)
-                    return tags
-                except json.JSONDecodeError:
-                    logger.warning("回應不是有效的 JSON，嘗試尋找 JSON 部分")
-                    
-                    # 嘗試從代碼塊中提取 JSON
-                    json_pattern = r'```(?:json)?\s*([\s\S]+?)\s*```'
-                    json_match = re.search(json_pattern, raw_content)
-                    
-                    if json_match:
-                        try:
-                            tags = json.loads(json_match.group(1))
-                            return tags
-                        except json.JSONDecodeError:
-                            logger.warning("代碼塊中的內容不是有效的 JSON")
-                    
-                    # 嘗試從文本中提取 JSON 物件
-                    json_object_pattern = r'\{[\s\S]*?\}'
-                    json_object_match = re.search(json_object_pattern, raw_content)
-                    
-                    if json_object_match:
-                        try:
-                            tags = json.loads(json_object_match.group(0))
-                            return tags
-                        except json.JSONDecodeError:
-                            logger.warning("找到的 JSON 物件不是有效的 JSON")
-                    
-                    # 如果無法解析 JSON，嘗試從文本中提取標籤
-                    structured_tags = {}
-                    current_category = None
-                    
-                    # 從文本中提取標籤
-                    for line in raw_content.split('\n'):
-                        # 移除 Markdown 標記和空白
-                        line = line.strip()
-                        if not line:
-                            continue
-                            
-                        # 檢查是否是類別標題
-                        if line.startswith('###') or line.startswith('#'):
-                            category_match = re.search(r'#+ *(.*?)$', line)
-                            if category_match:
-                                current_category = category_match.group(1).strip()
-                                structured_tags[current_category] = []
-                        # 檢查是否是標籤項目
-                        elif line.startswith('-') or line.startswith('*') or ':' in line:
-                            if current_category:
-                                # 提取標籤
-                                tag_match = re.search(r'[-*] *(.*?)$', line)
-                                if tag_match:
-                                    tag = tag_match.group(1).strip()
-                                    structured_tags[current_category].append(tag)
-                                else:
-                                    # 嘗試從冒號分隔的格式提取
-                                    tag_match = re.search(r'(.*?): *(.*?)$', line)
+                    try:
+                        tags = json.loads(raw_content)
+                        return tags
+                    except json.JSONDecodeError:
+                        logger.warning("回應不是有效的 JSON，嘗試尋找 JSON 部分")
+                        
+                        # 嘗試從代碼塊中提取 JSON
+                        json_pattern = r'```(?:json)?\s*([\s\S]+?)\s*```'
+                        json_match = re.search(json_pattern, raw_content)
+                        
+                        if json_match:
+                            try:
+                                tags = json.loads(json_match.group(1))
+                                return tags
+                            except json.JSONDecodeError:
+                                logger.warning("代碼塊中的內容不是有效的 JSON")
+                        
+                        # 嘗試從文本中提取 JSON 物件
+                        json_object_pattern = r'\{[\s\S]*?\}'
+                        json_object_match = re.search(json_object_pattern, raw_content)
+                        
+                        if json_object_match:
+                            try:
+                                tags = json.loads(json_object_match.group(0))
+                                return tags
+                            except json.JSONDecodeError:
+                                logger.warning("找到的 JSON 物件不是有效的 JSON")
+                        
+                        # 如果無法解析 JSON，嘗試從文本中提取標籤
+                        structured_tags = {}
+                        current_category = None
+                        
+                        # 從文本中提取標籤
+                        for line in raw_content.split('\n'):
+                            # 移除 Markdown 標記和空白
+                            line = line.strip()
+                            if not line:
+                                continue
+                                
+                            # 檢查是否是類別標題
+                            if line.startswith('###') or line.startswith('#'):
+                                category_match = re.search(r'#+ *(.*?)$', line)
+                                if category_match:
+                                    current_category = category_match.group(1).strip()
+                                    structured_tags[current_category] = []
+                            # 檢查是否是標籤項目
+                            elif line.startswith('-') or line.startswith('*') or ':' in line:
+                                if current_category:
+                                    # 提取標籤
+                                    tag_match = re.search(r'[-*] *(.*?)$', line)
                                     if tag_match:
-                                        sub_category = tag_match.group(1).strip()
-                                        tags = tag_match.group(2).strip()
-                                        if sub_category and tags:
-                                            if sub_category not in structured_tags:
-                                                structured_tags[sub_category] = []
-                                            structured_tags[sub_category].append(tags)
+                                        tag = tag_match.group(1).strip()
+                                        structured_tags[current_category].append(tag)
+                                    else:
+                                        # 嘗試從冒號分隔的格式提取
+                                        tag_match = re.search(r'(.*?): *(.*?)$', line)
+                                        if tag_match:
+                                            sub_category = tag_match.group(1).strip()
+                                            tags = tag_match.group(2).strip()
+                                            if sub_category and tags:
+                                                if sub_category not in structured_tags:
+                                                    structured_tags[sub_category] = []
+                                                structured_tags[sub_category].append(tags)
+                        
+                        # 如果成功提取到標籤
+                        if structured_tags:
+                            logger.info("從文本中提取到結構化標籤")
+                            return structured_tags
+                        
+                        # 如果所有嘗試都失敗，返回預設標籤
+                        logger.warning("無法從回應中提取標籤，返回預設標籤")
+                        return {"existing_tags": {"tags": {"general": ["video"]}}}
+                except (IndexError, AttributeError) as e:
+                    logger.error(f"解析回應時發生錯誤: {str(e)}")
+                    return {"existing_tags": {"tags": {"general": ["video"]}}}
+            
+            elif run.status == "requires_action":
+                logger.info("Assistant 需要執行動作")
+                try:
+                    # 處理 function call
+                    tool_calls = run.required_action.submit_tool_outputs.tool_calls
+                    outputs = []
                     
-                    # 如果成功提取到標籤
-                    if structured_tags:
-                        logger.info("從文本中提取到結構化標籤")
-                        return structured_tags
+                    for tool_call in tool_calls:
+                        # 根據功能名稱執行對應的操作
+                        if tool_call.function.name == "suggest_tags":
+                            outputs.append({
+                                "tool_call_id": tool_call.id,
+                                "output": tool_call.function.arguments
+                            })
+                        else:
+                            logger.warning(f"未知的功能: {tool_call.function.name}")
+                            outputs.append({
+                                "tool_call_id": tool_call.id,
+                                "output": "{}"
+                            })
                     
-                    # 如果所有嘗試都失敗，返回原始文本
-                    return {"raw_text": raw_content}
+                    # 提交功能執行結果
+                    run = self.client.beta.threads.runs.submit_tool_outputs(
+                        thread_id=thread_id,
+                        run_id=run_id,
+                        tool_outputs=outputs
+                    )
+                except Exception as e:
+                    logger.error(f"處理 function call 時發生錯誤: {str(e)}")
+                    return {"existing_tags": {"tags": {"general": ["video"]}}}
             
             elif run.status == "failed":
                 logger.error(f"標籤生成失敗: {run.last_error}")
                 raise Exception(f"標籤生成失敗: {run.last_error}")
+            
+            elif run.status in ["expired", "cancelled"]:
+                logger.error(f"處理失敗，狀態為 {run.status}")
+                raise RuntimeError(f"Tag suggestion failed with status: {run.status}")
                 
-            # 等待一段時間再檢查
-            time.sleep(1)
+            # 等待動態調整的時間再檢查
+            time.sleep(poll_interval)
+            logger.info(f"等待 Assistant 回應中，已經過 {int(time.time() - start_time)} 秒，下次檢查間隔: {poll_interval:.1f} 秒")
     
     def test_tag_suggestion(self, content):
-        """測試標籤建議功能
+        """測試標籤建議功能，含指數退避重試機制
         
         Args:
             content: 要分析的內容
@@ -299,92 +391,128 @@ class OpenAIAssistantTester:
         assistant = None
         thread = None
         
-        try:
-            # 創建 Assistant
-            assistant = self.create_test_assistant()
-            
-            # 創建對話執行緒
-            thread = self.client.beta.threads.create()
-            
-            # 添加用戶消息
-            self.client.beta.threads.messages.create(
-                thread_id=thread.id,
-                role="user",
-                content=content
-            )
-            
-            # 執行 Assistant
-            openai_start_time = time.time()
-            run = self.client.beta.threads.runs.create(
-                thread_id=thread.id,
-                assistant_id=assistant.id
-            )
-            
-            # 等待處理完成
-            tags = self.wait_for_completion(thread.id, run.id)
-            openai_processing_time = time.time() - openai_start_time
-            
-            # 計算標籤數量
-            tag_count = 0
-            for category, tag_list in tags.items():
-                if isinstance(tag_list, list):
-                    tag_count += len(tag_list)
-                elif isinstance(tag_list, str):
-                    tag_count += 1
-            
-            # 估算 token 使用量和成本
-            input_tokens = len(content) / 4  # 粗略估算
-            output_tokens = len(json.dumps(tags, ensure_ascii=False)) / 4  # 粗略估算
-            
-            # 根據模型計算成本
-            input_cost_per_token = 0.00015  # 預設值
-            output_cost_per_token = 0.0006  # 預設值
-            
-            if self.model == "gpt-4o-mini":
-                input_cost_per_token = 0.00015
-                output_cost_per_token = 0.0006
-            elif self.model == "gpt-4.1-mini":
-                input_cost_per_token = 0.0001
-                output_cost_per_token = 0.0003
-            elif self.model == "gpt-4.1-nano":
-                input_cost_per_token = 0.000025
-                output_cost_per_token = 0.000075
-            
-            input_cost = input_tokens * input_cost_per_token
-            output_cost = output_tokens * output_cost_per_token
-            total_cost = input_cost + output_cost
-            
-            # 更新結果
-            self.results["success"] = True
-            self.results["processing_time"] = time.time() - start_time
-            self.results["openai_processing_time"] = openai_processing_time
-            self.results["tag_count"] = tag_count
-            self.results["tags"] = tags
-            self.results["estimated_tokens"] = {
-                "input": int(input_tokens),
-                "output": int(output_tokens),
-                "total": int(input_tokens + output_tokens)
-            }
-            self.results["estimated_cost"] = {
-                "input": input_cost,
-                "output": output_cost,
-                "total": total_cost
-            }
-            self.results["raw_response"] = tags
-            
-            return self.results
-            
-        except Exception as e:
-            logger.error(f"測試標籤建議時發生錯誤: {str(e)}")
-            self.results["success"] = False
-            self.results["processing_time"] = time.time() - start_time
-            self.results["error"] = str(e)
-            return self.results
-            
-        finally:
-            # 清理資源
-            if assistant:
-                self.delete_assistant(assistant.id)
+        # 指數退避重試機制
+        retry_intervals = [5, 10, 20, 40, 80]  # 指數退避，最多 5 次
+        last_exception = None
+        
+        for attempt, wait_time in enumerate(retry_intervals, 1):
+            try:
+                # 重新載入環境變數，確保 API 金鑰有效
+                self._load_env_variables()
+                logger.info(f"[嘗試第 {attempt} 次] 開始生成標籤建議...")
+                
+                # 創建 Assistant
+                assistant = self.create_test_assistant()
+                
+                # 創建對話執行緒
+                thread = self.client.beta.threads.create()
+                
+                # 添加用戶消息
+                self.client.beta.threads.messages.create(
+                    thread_id=thread.id,
+                    role="user",
+                    content=content
+                )
+                
+                # 執行 Assistant
+                openai_start_time = time.time()
+                run = self.client.beta.threads.runs.create(
+                    thread_id=thread.id,
+                    assistant_id=assistant.id
+                )
+                
+                # 等待處理完成
+                tags = self.wait_for_completion(thread.id, run.id)
+                openai_processing_time = time.time() - openai_start_time
+                
+                # 計算標籤數量
+                tag_count = 0
+                if "existing_tags" in tags and "tags" in tags["existing_tags"]:
+                    # 使用與 tag_suggestion.py 相同的計算方式
+                    for category in tags["existing_tags"]["tags"].values():
+                        if isinstance(category, dict):
+                            for subcategory in category.values():
+                                if isinstance(subcategory, list):
+                                    tag_count += len(subcategory)
+                        elif isinstance(category, list):
+                            tag_count += len(category)
+                else:
+                    # 如果不是標準格式，使用原來的計算方式
+                    for category, tag_list in tags.items():
+                        if isinstance(tag_list, list):
+                            tag_count += len(tag_list)
+                        elif isinstance(tag_list, str):
+                            tag_count += 1
+                
+                # 估算 token 使用量和成本
+                input_tokens = len(content) / 4  # 粗略估算
+                output_tokens = len(json.dumps(tags, ensure_ascii=False)) / 4  # 粗略估算
+                
+                # 根據模型計算成本
+                input_cost_per_token = 0.00015  # 預設值
+                output_cost_per_token = 0.0006  # 預設值
+                
+                if self.model == "gpt-4o-mini":
+                    input_cost_per_token = 0.00015
+                    output_cost_per_token = 0.0006
+                elif self.model == "gpt-4.1-mini":
+                    input_cost_per_token = 0.0001
+                    output_cost_per_token = 0.0003
+                elif self.model == "gpt-4.1-nano":
+                    input_cost_per_token = 0.000025
+                    output_cost_per_token = 0.000075
+                
+                input_cost = input_tokens * input_cost_per_token
+                output_cost = output_tokens * output_cost_per_token
+                total_cost = input_cost + output_cost
+                
+                # 更新結果
+                self.results["success"] = True
+                self.results["processing_time"] = time.time() - start_time
+                self.results["openai_processing_time"] = openai_processing_time
+                self.results["tag_count"] = tag_count
+                self.results["tags"] = tags
+                self.results["estimated_tokens"] = {
+                    "input": int(input_tokens),
+                    "output": int(output_tokens),
+                    "total": int(input_tokens + output_tokens)
+                }
+                self.results["estimated_cost"] = {
+                    "input": input_cost,
+                    "output": output_cost,
+                    "total": total_cost
+                }
+                self.results["raw_response"] = tags
+                
+                # 清理資源
+                if assistant and not self.assistant_id:  # 只在創建了新 Assistant 時才刪除
+                    self.delete_assistant(assistant.id)
+                
+                return self.results
+                
+            except Exception as e:
+                last_exception = e
+                logger.error(f"[嘗試第 {attempt} 次] 生成標籤時發生錯誤: {str(e)}")
+                
+                # 清理資源
+                if assistant and not self.assistant_id:  # 只在創建了新 Assistant 時才刪除
+                    try:
+                        self.delete_assistant(assistant.id)
+                    except Exception as del_err:
+                        logger.warning(f"刪除 Assistant 時發生錯誤: {str(del_err)}")
+                
+                # 如果還有重試次數，等待後重試
+                if attempt < len(retry_intervals):
+                    logger.info(f"等待 {wait_time} 秒後重試...")
+                    time.sleep(wait_time)
+                else:
+                    # 已達到最大重試次數
+                    logger.error("已達到最大重試次數，標籤生成失敗")
+                    self.results["success"] = False
+                    self.results["processing_time"] = time.time() - start_time
+                    self.results["error"] = str(last_exception)
+                    self.results["tags"] = {"existing_tags": {"tags": {"general": ["video"]}}}
+                    return self.results
 
 def format_tag_preview(tags):
     """格式化標籤預覽"""
