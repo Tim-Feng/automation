@@ -21,3 +21,6 @@ docs/tags.json
 
 # 已封存的數據文件
 scripts/archive/data/
+
+# 測試結果輸出
+results/
