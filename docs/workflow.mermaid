@@ -7,12 +7,13 @@ flowchart TB
 
     subgraph "1️⃣ 前置處理"
         A[stage1-preparation.applescript] -->|自動化處理| A1[從 Google Sheets 擷取資訊]
-        A1 --> A2[下載 YouTube 影片]
+        A1 --> A11[使用 Perplexity 生成內容]
+        A11 --> A2[下載 YouTube 影片]
         A2 --> A21[使用 Gemini 分析影片]
-        A21 --> A3[建立 WordPress 草稿]
+        A21 --> A22[合併內容並使用 OpenAI 生成標籤]
+        A22 --> A3[建立 WordPress 草稿]
         A3 --> A31[下載並壓縮 YouTube 縮圖]
         A31 --> A32[設定為文章特色圖片]
-        A32 --> A4[使用 OpenAI 生成標籤]
         A -->|使用| AA[google_sheets.py]
         A -->|使用| AB[wordpress_api.py]
         A -->|使用| AC[logger.py]
@@ -87,7 +88,7 @@ flowchart TB
     classDef tools fill:#ff9,stroke:#333,stroke-width:1px;
     
     class A,B,C,D mainScript;
-    class A1,A2,A21,A3,A31,A32,A4,B1,B2,B3,B4,B5,B6,C1,C2,C3,C4,C5,C6,C7,C8,D1,D2,D3 subProcess;
+    class A1,A11,A2,A21,A22,A3,A31,A32,B1,B2,B3,B4,B5,B6,C1,C2,C3,C4,C5,C6,C7,C8,D1,D2,D3 subProcess;
     class AA,AB,AC,AD,AE,AF,AG,AH,BA,BB,BC,BD,CA,CB,CC,CD,CE,CF,DA,DB,DC,DD utility;
     class ACL,BCL,CEL,DCL logger;
     class DEP,DEP1,DEP2,DEP3 utility;
