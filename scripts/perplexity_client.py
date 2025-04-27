@@ -26,6 +26,97 @@ class PerplexityClient:
         # 編譯正則表達式
         self.chinese_pattern = re.compile(r'([\u4e00-\u9fff])([\da-zA-Z])')  # 中文後面接英文或數字
         self.reverse_pattern = re.compile(r'([\da-zA-Z])([\u4e00-\u9fff])')  # 英文或數字後面接中文
+        
+        # 載入 prompt 模板
+        self.load_prompt_template()
+
+    def load_prompt_template(self):
+        """載入並組合 prompt 模板"""
+        prompt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../prompts/perplexity/content_generation.json')
+        try:
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                
+                # 1. 添加開場白
+                prompt = data['intro']['content']
+                
+                # 2. 添加規則
+                rules = data['rules']
+                
+                # 連結和來源規則
+                source = rules['source']
+                prompt += f"\n\n{source['title']}：\n"
+                for item in source['items']:
+                    prompt += f" - {item}\n"
+                prompt += f"例如：{source['example']}"
+                
+                # 寫作風格規則
+                style = rules['writing_style']
+                prompt += f"\n\n{style['title']}：\n"
+                for i, item in enumerate(style['items'], 1):
+                    prompt += f"{i}. {item}\n"
+                
+                # 譯名標注規則
+                name_format = rules['name_format']
+                prompt += f"\n{name_format['title']}（重要！）：\n"
+                
+                # 日文人名
+                jp = name_format['japanese_name']
+                prompt += f"A. {jp['title']}：\n"
+                for item in jp['items']:
+                    prompt += f"   - {item['rule']}：「{item['example']}」\n"
+                
+                # 外國人名
+                foreign = name_format['foreign_name']
+                prompt += f"B. {foreign['title']}：\n"
+                for rule_set in foreign['rules']:
+                    prompt += f"   - {rule_set['type']}：{rule_set['rule']}\n"
+                    prompt += f"     例如：" + "、".join(f"「{ex}」" for ex in rule_set['examples'])
+                    prompt += "\n"
+                
+                # 品牌名稱
+                brand = name_format['brand_name']
+                prompt += f"C. {brand['title']}：\n"
+                for rule_set in brand['rules']:
+                    prompt += f"   - {rule_set['type']}：{rule_set['rule']}\n"
+                    prompt += f"     例如：" + "、".join(f"「{ex}」" for ex in rule_set['examples'])
+                    prompt += "\n"
+                
+                # 影視作品規則
+                work = rules['work_format']
+                prompt += f"D. {work['title']}：\n"
+                for item in work['items']:
+                    prompt += f"   - {item['rule']}："
+                    if isinstance(item['examples'], list):
+                        prompt += "、".join(f"「{ex}」" for ex in item['examples'])
+                    else:
+                        examples = item['examples']
+                        prompt += f"「{examples['japanese']}」「{examples['korean']}」"
+                    prompt += "\n"
+                
+                # 內容結構規則
+                structure = rules['content_structure']
+                prompt += f"\n{structure['title']}：\n"
+                for item in structure['items']:
+                    prompt += f" - {item}\n"
+                
+                # 嚴格檢查
+                final = rules['final_check']
+                prompt += f"\n{final['title']}：\n{final['content']}"
+                
+                # 3. 添加範例
+                if data.get('examples'):
+                    prompt += "\n\n實際範例參考：\n"
+                    for example in data['examples']:
+                        prompt += f"\n輸入標題：{example['input']}\n"
+                        prompt += f"輸出內容：\n{example['output']}\n"
+                
+                self.prompt_template = prompt
+                logger.debug("成功載入並組合 prompt 模板")
+                
+        except Exception as e:
+            logger.error(f"載入 prompt 模板時發生錯誤: {str(e)}")
+            raise
 
     def add_spaces(self, text: str) -> str:
         """在中文和英文/數字之間添加空格"""
@@ -58,41 +149,9 @@ class PerplexityClient:
     def search(self, title: str) -> str:
         """使用影片標題進行搜索並返回格式化的內容（含指數退避重試）"""
         import time
-        prompt = f"""請想像這是一個專業廣告影片平台的作品介紹，需要吸引觀眾又傳達重要資訊。所有資訊必須準確且有來源依據，並使用流暢的敘事方式，描述以下這支廣告影片：
-
-{title}
-
-連結和來源：
- - 文章中不要出現引用來源
- - 所有的引用來源都請放在段落結束後，以「參考來源」開始一個新段落，並將每個來源轉換為可點擊的連結，連結名稱為網站名稱，例如 <a href="https://example.com">網站名稱</a>。
-
-寫作風格要求：
-1. 基本格式：
-   - 使用正體中文台灣用語撰寫
-   - 中文與英文之間加入半形空白
-   - 中文與阿拉伯數字之間加入半形空白
-   - 不要使用粗體字加強，直接使用純文字
-
-2. 譯名標注規則（重要！）：
-   A. 日文人名：
-      - 譯名和漢字相同時直接寫：「新垣結衣」
-      - 譯名和漢字不同時標註原文：「淺田政志（浅田政志）」
-      - 有假名時標註假名：「森田輝（森田ひかる）」
-   B. 英文人名：
-      - 中文譯名標註英文：「羅溫·艾金森（Rowan Atkinson）」
-   C. 影視作品：
-      - 必須使用台灣官方翻譯並標注英文：「《傲慢與偏見》（Pride and Prejudice）」「《怪奇物語：第四季》（Stranger Things: Season 4）」
-      - 如果作品原名為日文或韓文，則可標示「日文/韓文+英文」：「《進擊的巨人》（進撃の巨人 / Attack on Titan）」「《葬送的芙莉蓮》（葬送のフリーレン / Frieren: Beyond Journey's End）」「《魷魚遊戲》（오징어 게임 / Squid Game）」
-
-3. 內容結構：
-   - 內容需要像在說一個吸引人的故事
-   - 避免使用條列式
-   - 以段落方式描述影片背景、目的、主題和重點內容
-   - 如果有幕後製作團隊和特色也請列出
-   - 直接以內容描述開始，不需要標題
-
-嚴格檢查：
-回覆前再次確認所有資訊與格式是否符合以上規範，尤其需要避免使用中國用語和翻譯。"""
+        
+        # 使用模板生成 prompt
+        prompt = self.prompt_template.format(title=title)
 
         retry_intervals = [5, 10, 20, 40, 80]  # 秒，指數退避
         last_exception = None
@@ -150,6 +209,40 @@ class PerplexityClient:
         except Exception as e:
             logger.error(f"寫入 failed_jobs.json 時發生錯誤: {str(e)}")
 
+    def generate_content(self, title: str, gemini_content: str = None) -> str:
+        """生成廣告影片描述內容
+        
+        Args:
+            title: 影片標題
+            gemini_content: Gemini 分析的內容（可選）
+            
+        Returns:
+            str: 生成的內容
+        """
+        try:
+            # 生成內容
+            content = self._generate_raw_content(title)
+            
+            # 驗證內容
+            is_valid, corrected_content, errors = self.validator.validate_content(
+                content, 
+                gemini_content
+            )
+            
+            if not is_valid:
+                self.logger.warning(f"內容驗證發現問題：\n{'\n'.join(errors)}")
+                # TODO: 實作自動修正或人工審核流程
+                return content
+            
+            return corrected_content
+            
+        except Exception as e:
+            self.logger.error(f"生成內容時發生錯誤: {str(e)}")
+            raise
+
+    def _generate_raw_content(self, title: str) -> str:
+        """使用 Perplexity 生成原始內容"""
+        # ... existing generate_content code ...
 
 def main():
     """測試用主函數"""
