@@ -17,6 +17,9 @@ load_dotenv(dotenv_path)
 
 logger = get_workflow_logger('1', 'gemini_video_analyzer')
 
+# 提示詞路徑
+PROMPT_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'prompts', 'gemini', 'video_analysis.json')
+
 class GeminiVideoAnalyzer:
     def __init__(self):
         """初始化 Gemini Video Analyzer"""
@@ -28,6 +31,15 @@ class GeminiVideoAnalyzer:
         self.client = genai.Client(api_key=self.api_key)
         self.model = "gemini-1.5-flash"  # 使用配額較高的模型
         logger.debug(f"初始化 Gemini Video Analyzer，使用模型: {self.model}")
+        
+        # 載入提示詞模板
+        try:
+            with open(PROMPT_PATH, 'r', encoding='utf-8') as f:
+                self.prompt_config = json.load(f)
+                logger.debug(f"成功載入提示詞模板: {PROMPT_PATH}")
+        except Exception as e:
+            logger.error(f"載入提示詞模板失敗: {str(e)}")
+            raise
     
     def analyze_youtube_video(self, youtube_url: str, title: str = "", max_retries: int = 10, use_wordpress_format: bool = True) -> Optional[str]:
         """直接分析 YouTube 影片
@@ -63,38 +75,49 @@ class GeminiVideoAnalyzer:
                 if title:
                     video_info += f"影片標題：{title}\n"
                 
-                prompt = f"""請客觀地描述下面提供的 YouTube 影片內容。
-
-{video_info}
-
-如果你能存取影片內容，請以流暢且連貫的文字描述影片中發生的事件，就像向一個看不到影片的人解釋故事一般，包括但不限於以下元素：
-- 影片中的人物，他們的性格、情緒、互動動機與行為細節
-- 發生的主要事件、情節結構與明顯的轉折點
-- 影片中出現的場景、地點、動作、對話與旁白內容
-- 音樂與音效（請描述其具體風格、氛圍或帶來的效果）
-- 畫面中出現的文字、標語與口號
-- 影片中的品牌或產品及其呈現方式，請客觀描述品牌的主要訴求與產品特色
-
-請以連貫的段落方式呈現，不要使用腳本或分項格式。描述時請使用正體中文台灣用語撰寫，並嚴格遵守以下格式規定：
-- 中文與英文之間加入半形空白
-- 中文與阿拉伯數字之間加入半形空白
-- 保持客觀，不要加入個人評價或主觀判斷
-- 避免使用「影片開始」、「影片結束」或類似的表述
-
-譯名標注規則：
-- 日文人名：譯名和漢字相同時直接寫，不同時標註原文，有假名時標註假名
-- 英文人名：中文譯名後以括號標註英文原名
-- 影視作品：使用台灣官方翻譯並括號標註英文原名
-
-非常重要的格式要求：
-- 直接開始描述影片內容，不要使用任何形式的開場白（如「好的」、「以下是」、「我將描述」等）
-- 不要在描述結尾加入任何形式的結語（如「希望這個描述有幫助」、「這就是影片的內容」等）
-- 不要使用任何形式的自我稱呼（如「我」、「我的描述」等）
-- 不要使用任何形式的對話（如「你」、「您」等）
-
-重要：如果你無法直接存取影片內容，請明確指出此限制，並建議可能的替代方案。
-"""
-
+                # 使用提示詞模板
+                prompt = self.prompt_config["intro"]["content"].format(
+                    video_type="YouTube",
+                    video_info=video_info
+                )
+                
+                # 添加分析要素
+                prompt += "\n\n分析要素：\n"
+                for item in self.prompt_config["rules"]["analysis_elements"]["items"]:
+                    prompt += f"- {item}\n"
+                
+                # 添加寫作風格要求
+                prompt += "\n寫作風格要求：\n"
+                for item in self.prompt_config["rules"]["writing_style"]["items"]:
+                    prompt += f"- {item}\n"
+                
+                # 添加譯名標注規則
+                prompt += "\n譯名標注規則：\n"
+                name_format = self.prompt_config["rules"]["name_format"]
+                prompt += "1. " + name_format["japanese_name"]["title"] + "\n"
+                for item in name_format["japanese_name"]["items"]:
+                    prompt += f"   - {item['rule']}：「{item['example']}」\n"
+                
+                prompt += "\n2. " + name_format["foreign_name"]["title"] + "\n"
+                for rule in name_format["foreign_name"]["rules"]:
+                    prompt += f"   - {rule['type']}：{rule['rule']}\n"
+                    prompt += "     例如：" + "、".join(f"「{ex}」" for ex in rule["examples"]) + "\n"
+                
+                prompt += "\n3. " + name_format["brand_name"]["title"] + "\n"
+                for rule in name_format["brand_name"]["rules"]:
+                    prompt += f"   - {rule['type']}：{rule['rule']}\n"
+                    prompt += "     例如：" + "、".join(f"「{ex}」" for ex in rule["examples"]) + "\n"
+                
+                # 添加作品名稱規則
+                prompt += "\n4. " + self.prompt_config["rules"]["work_format"]["title"] + "\n"
+                for rule in self.prompt_config["rules"]["work_format"]["rules"]:
+                    prompt += f"   - {rule['type']}：{rule['rule']}\n"
+                    prompt += "     例如：" + "、".join(f"{ex}" for ex in rule["examples"]) + "\n"
+                
+                # 添加內容結構規則
+                prompt += "\n內容結構規則：\n"
+                for item in self.prompt_config["rules"]["content_structure"]["items"]:
+                    prompt += f"- {item}\n"
                 
                 logger.info(f"開始分析 YouTube 影片: {youtube_url} (嘗試 {attempt + 1}/{max_retries})")
                 
@@ -239,28 +262,49 @@ class GeminiVideoAnalyzer:
                 if title:
                     video_info += f"影片標題：{title}\n"
                 
-                # 使用與 analyze_youtube_video 相同的提示詞
-                prompt = f"""請客觀地描述下面提供的影片內容。
-
-{video_info}
-
-如果你能存取影片內容，請以流暢的文字描述影片中發生的事件，包括：
-- 影片中的人物、場景和動作
-- 對話和旁白內容
-- 音樂和音效
-- 出現的文字和標語
-- 產品展示方式
-
-請以連貼的段落式說明，而不是以腳本或分項格式呈現。描述應該就像你在向一個看不到影片的人解釋影片中發生的事情。
-
-請使用正體中文台灣用語撰寫，中文與英文之間加入半形空白，中文與阿拉伯數字之間加入半形空白。請保持客觀描述，不要加入個人評價。
-
-譯名標注規則：
-- 日文人名：譯名和漢字相同時直接寫，不同時標註原文，有假名時標註假名
-- 英文人名：中文譯名標註英文
-- 影視作品：使用台灣官方翻譯並標注英文
-
-重要：請直接描述影片內容，不要使用「影片開始」、「影片結束」或類似的描述。將影片內容視為一個完整的故事來描述。"""
+                # 使用提示詞模板
+                prompt = self.prompt_config["intro"]["content"].format(
+                    video_type="本地",
+                    video_info=video_info
+                )
+                
+                # 添加分析要素
+                prompt += "\n\n分析要素：\n"
+                for item in self.prompt_config["rules"]["analysis_elements"]["items"]:
+                    prompt += f"- {item}\n"
+                
+                # 添加寫作風格要求
+                prompt += "\n寫作風格要求：\n"
+                for item in self.prompt_config["rules"]["writing_style"]["items"]:
+                    prompt += f"- {item}\n"
+                
+                # 添加譯名標注規則
+                prompt += "\n譯名標注規則：\n"
+                name_format = self.prompt_config["rules"]["name_format"]
+                prompt += "1. " + name_format["japanese_name"]["title"] + "\n"
+                for item in name_format["japanese_name"]["items"]:
+                    prompt += f"   - {item['rule']}：「{item['example']}」\n"
+                
+                prompt += "\n2. " + name_format["foreign_name"]["title"] + "\n"
+                for rule in name_format["foreign_name"]["rules"]:
+                    prompt += f"   - {rule['type']}：{rule['rule']}\n"
+                    prompt += "     例如：" + "、".join(f"「{ex}」" for ex in rule["examples"]) + "\n"
+                
+                prompt += "\n3. " + name_format["brand_name"]["title"] + "\n"
+                for rule in name_format["brand_name"]["rules"]:
+                    prompt += f"   - {rule['type']}：{rule['rule']}\n"
+                    prompt += "     例如：" + "、".join(f"「{ex}」" for ex in rule["examples"]) + "\n"
+                
+                # 添加作品名稱規則
+                prompt += "\n4. " + self.prompt_config["rules"]["work_format"]["title"] + "\n"
+                for rule in self.prompt_config["rules"]["work_format"]["rules"]:
+                    prompt += f"   - {rule['type']}：{rule['rule']}\n"
+                    prompt += "     例如：" + "、".join(f"{ex}" for ex in rule["examples"]) + "\n"
+                
+                # 添加內容結構規則
+                prompt += "\n內容結構規則：\n"
+                for item in self.prompt_config["rules"]["content_structure"]["items"]:
+                    prompt += f"- {item}\n"
                 
                 logger.info(f"開始分析本地影片檔案: {video_file_path} (嘗試 {attempt + 1}/{max_retries})")
                 

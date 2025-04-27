@@ -23,10 +23,6 @@ class PerplexityClient:
         }
         self.cc = OpenCC('s2tw')  # 建立繁簡轉換器，s2tw 表示從簡體轉換到繁體（台灣標準）
         
-        # 編譯正則表達式
-        self.chinese_pattern = re.compile(r'([\u4e00-\u9fff])([\da-zA-Z])')  # 中文後面接英文或數字
-        self.reverse_pattern = re.compile(r'([\da-zA-Z])([\u4e00-\u9fff])')  # 英文或數字後面接中文
-        
         # 載入 prompt 模板
         self.load_prompt_template()
 
@@ -35,95 +31,116 @@ class PerplexityClient:
         prompt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../prompts/perplexity/content_generation.json')
         try:
             with open(prompt_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                
-                # 1. 添加開場白
-                prompt = data['intro']['content']
-                
-                # 2. 添加規則
-                rules = data['rules']
-                
-                # 連結和來源規則
-                source = rules['source']
-                prompt += f"\n\n{source['title']}：\n"
-                for item in source['items']:
-                    prompt += f" - {item}\n"
-                prompt += f"例如：{source['example']}"
-                
-                # 寫作風格規則
-                style = rules['writing_style']
-                prompt += f"\n\n{style['title']}：\n"
-                for i, item in enumerate(style['items'], 1):
-                    prompt += f"{i}. {item}\n"
-                
-                # 譯名標注規則
-                name_format = rules['name_format']
-                prompt += f"\n{name_format['title']}（重要！）：\n"
-                
-                # 日文人名
-                jp = name_format['japanese_name']
-                prompt += f"A. {jp['title']}：\n"
-                for item in jp['items']:
-                    prompt += f"   - {item['rule']}：「{item['example']}」\n"
-                
-                # 外國人名
-                foreign = name_format['foreign_name']
-                prompt += f"B. {foreign['title']}：\n"
-                for rule_set in foreign['rules']:
-                    prompt += f"   - {rule_set['type']}：{rule_set['rule']}\n"
-                    prompt += f"     例如：" + "、".join(f"「{ex}」" for ex in rule_set['examples'])
-                    prompt += "\n"
-                
-                # 品牌名稱
-                brand = name_format['brand_name']
-                prompt += f"C. {brand['title']}：\n"
-                for rule_set in brand['rules']:
-                    prompt += f"   - {rule_set['type']}：{rule_set['rule']}\n"
-                    prompt += f"     例如：" + "、".join(f"「{ex}」" for ex in rule_set['examples'])
-                    prompt += "\n"
-                
-                # 影視作品規則
-                work = rules['work_format']
-                prompt += f"D. {work['title']}：\n"
-                for item in work['items']:
-                    prompt += f"   - {item['rule']}："
-                    if isinstance(item['examples'], list):
-                        prompt += "、".join(f"「{ex}」" for ex in item['examples'])
-                    else:
-                        examples = item['examples']
-                        prompt += f"「{examples['japanese']}」「{examples['korean']}」"
-                    prompt += "\n"
-                
-                # 內容結構規則
-                structure = rules['content_structure']
-                prompt += f"\n{structure['title']}：\n"
-                for item in structure['items']:
-                    prompt += f" - {item}\n"
-                
-                # 嚴格檢查
-                final = rules['final_check']
-                prompt += f"\n{final['title']}：\n{final['content']}"
-                
-                # 3. 添加範例
-                if data.get('examples'):
-                    prompt += "\n\n實際範例參考：\n"
-                    for example in data['examples']:
-                        prompt += f"\n輸入標題：{example['input']}\n"
-                        prompt += f"輸出內容：\n{example['output']}\n"
-                
-                self.prompt_template = prompt
-                logger.debug("成功載入並組合 prompt 模板")
+                self.prompt_config = json.load(f)
+                logger.debug("成功載入 prompt 設定")
                 
         except Exception as e:
             logger.error(f"載入 prompt 模板時發生錯誤: {str(e)}")
             raise
 
+    def _build_prompt(self, title: str) -> str:
+        """根據設定建立完整的 prompt
+        
+        Args:
+            title: 影片標題
+            
+        Returns:
+            str: 完整的 prompt 字串
+        """
+        data = self.prompt_config
+        prompt = []
+        
+        # 1. 添加開場白
+        prompt.append(data['intro']['content'].format(title=title))
+        prompt.append("")  # 空行
+        
+        rules = data['rules']
+        
+        # 2. 添加規則
+        # 連結和來源規則
+        source = rules['source']
+        prompt.append(f"{source['title']}：")
+        for item in source['items']:
+            prompt.append(f"- {item}")
+        prompt.append(f"例如：{source['example']}")
+        prompt.append("")
+        
+        # 寫作風格規則
+        style = rules['writing_style']
+        prompt.append(f"{style['title']}：")
+        for i, item in enumerate(style['items'], 1):
+            prompt.append(f"{i}. {item}")
+        prompt.append("")
+        
+        # 譯名標注規則
+        name_format = rules['name_format']
+        prompt.append(f"{name_format['title']}（重要！）：")
+        
+        # 日文人名
+        jp = name_format['japanese_name']
+        prompt.append(f"A. {jp['title']}：")
+        for item in jp['items']:
+            rule_line = "   - {}：「{}」".format(item['rule'], item['example'])
+            prompt.append(rule_line)
+        prompt.append("")
+        
+        # 外國人名
+        foreign = name_format['foreign_name']
+        prompt.append(f"B. {foreign['title']}：")
+        for rule_set in foreign['rules']:
+            prompt.append(f"   - {rule_set['type']}：{rule_set['rule']}")
+            examples = ["「{}」".format(ex) for ex in rule_set['examples']]
+            prompt.append("     例如：" + "、".join(examples))
+            prompt.append("")
+        
+        # 品牌名稱
+        brand = name_format['brand_name']
+        prompt.append(f"C. {brand['title']}：")
+        for rule_set in brand['rules']:
+            prompt.append(f"   - {rule_set['type']}：{rule_set['rule']}")
+            examples = ["「{}」".format(ex) for ex in rule_set['examples']]
+            prompt.append("     例如：" + "、".join(examples))
+            prompt.append("")
+        
+        # 影視作品規則
+        work = rules['work_format']
+        prompt.append(f"D. {work['title']}：")
+        for rule in work['rules']:
+            prompt.append(f"   - {rule['type']}：{rule['rule']}")
+            examples = ["「{}」".format(ex) for ex in rule['examples']]
+            prompt.append("     例如：" + "、".join(examples))
+            prompt.append("")
+        
+        # 內容結構規則
+        structure = rules['content_structure']
+        prompt.append(f"{structure['title']}：")
+        for item in structure['items']:
+            prompt.append(f"- {item}")
+        prompt.append("")
+        
+        # 嚴格檢查
+        final = rules['final_check']
+        prompt.append(f"{final['title']}：")
+        prompt.append(final['content'])
+        
+        # 3. 添加範例
+        if data.get('examples'):
+            prompt.append("")  # 添加空行
+            prompt.append("實際範例參考：")
+            for example in data['examples']:
+                title_line = "輸入標題：" + example['input']
+                content_line = "輸出內容：\n" + example['output']
+                prompt.append(title_line)
+                prompt.append(content_line)
+        
+        return "\n".join(prompt)
+
     def add_spaces(self, text: str) -> str:
         """在中文和英文/數字之間添加空格"""
         # 在中文後面加空格
-        text = self.chinese_pattern.sub(r'\1 \2', text)
+        text = re.sub(r'([\u4e00-\u9fff])([a-zA-Z0-9])', r'\1 \2', text)
         # 在中文前面加空格
-        text = self.reverse_pattern.sub(r'\1 \2', text)
+        text = re.sub(r'([a-zA-Z0-9])([\u4e00-\u9fff])', r'\1 \2', text)
         return text
 
     def format_response(self, response: str) -> str:
@@ -142,7 +159,7 @@ class PerplexityClient:
         formatted_content = []
         
         for p in paragraphs:
-            formatted_content.append(f"<!-- wp:paragraph -->\n<p>{p}</p>\n<!-- /wp:paragraph -->")
+            formatted_content.append("<!-- wp:paragraph -->\n<p>{}</p>\n<!-- /wp:paragraph -->".format(p))
         
         return '\n\n'.join(formatted_content)
 
@@ -150,8 +167,8 @@ class PerplexityClient:
         """使用影片標題進行搜索並返回格式化的內容（含指數退避重試）"""
         import time
         
-        # 使用模板生成 prompt
-        prompt = self.prompt_template.format(title=title)
+        # 使用新的方法生成 prompt
+        prompt = self._build_prompt(title)
 
         retry_intervals = [5, 10, 20, 40, 80]  # 秒，指數退避
         last_exception = None
@@ -230,7 +247,8 @@ class PerplexityClient:
             )
             
             if not is_valid:
-                self.logger.warning(f"內容驗證發現問題：\n{'\n'.join(errors)}")
+                error_message = "內容驗證發現問題：\n{}".format('\n'.join(errors))
+                self.logger.warning(error_message)
                 # TODO: 實作自動修正或人工審核流程
                 return content
             
