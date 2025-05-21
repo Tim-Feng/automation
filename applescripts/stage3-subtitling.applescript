@@ -56,6 +56,49 @@ end joinList
 on run {input, parameters}
     -- 初始化計數器和列表
     set totalFiles to count of input
+    set missingVideoCount to 0
+    set missingVideoList to {}
+    
+    -- 預檢：檢查所有影片檔案是否存在
+    my writeLog("INFO", "開始檢查影片檔案，共 " & totalFiles & " 個")
+    
+    repeat with currentSubtitlePath in input
+        -- 取得字幕路徑和 ID
+        set subtitlePath to POSIX path of currentSubtitlePath
+        set subtitleID to do shell script "basename " & quoted form of subtitlePath & " | sed 's/\\.srt$//'"
+        
+        -- 設定目標資料夾路徑
+        set targetFolderPath to "/Users/Mac/Desktop/Video Production/2. To be Translated/" & subtitleID
+        
+        -- 檢查影片檔案
+        set findCommand to "find " & quoted form of targetFolderPath & " -maxdepth 1 -type f -name '" & subtitleID & "-1920\\*1340.*' | head -n 1"
+        set foundVideo to do shell script findCommand
+        
+        if foundVideo is "" then
+            my writeLog("ERROR", "找不到影片檔案：" & subtitleID)
+            set end of missingVideoList to subtitleID
+            set missingVideoCount to missingVideoCount + 1
+        end if
+    end repeat
+    
+    -- 輸出預檢報告
+    my writeLog("INFO", "影片檔案檢查完成")
+    
+    if missingVideoCount > 0 then
+        my writeLog("ERROR", "缺少 " & missingVideoCount & " 個影片檔案：" & missingVideoList)
+        
+        -- 詢問使用者是否繼續
+        display dialog "預檢發現缺少影片檔案：\n\n共缺少 " & missingVideoCount & " 個影片檔案\n缺少的 ID：" & missingVideoList & "\n\n是否仍要繼續執行？" buttons {"取消", "繼續執行"} default button "取消" with icon caution
+        
+        if button returned of result is "取消" then
+            my writeLog("INFO", "使用者選擇取消執行")
+            error "使用者取消執行"
+        end if
+    else
+        my writeLog("SUCCESS", "所有影片檔案都存在")
+    end if
+    
+    -- 重置計數器，開始主要處理流程
     set successCount to 0
     set folderNotFoundCount to 0
     set subtitleConversionFailCount to 0
