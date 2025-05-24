@@ -222,135 +222,6 @@ class WordPressTaxonomyManager:
             
         return items
         
-    def load_json_categories(self, json_files: List[str]) -> tuple[set[str], dict[str, set[str]]]:
-        """讀取 JSON 檔案中的分類
-        
-        Args:
-            json_files: JSON 檔案列表
-            
-        Returns:
-            tuple: (分類名稱集合, 別名對應字典)
-        """
-        categories = set()
-        aliases_map = {}
-        
-        for json_file in json_files:
-            try:
-                with open(json_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    for item in data:
-                        # 將主要分類名稱加入集合
-                        name_val = item['name']  # Updated to use 'name' instead of 'tag'
-                        categories.add(name_val)
-                        
-                        # 建立別名對應關係
-                        if 'aliases' in item:
-                            for alias in item['aliases']:
-                                if alias != name_val:  # 不要把主分類當作別名
-                                    if alias not in aliases_map:
-                                        aliases_map[alias] = set()
-                                    aliases_map[alias].add(tag)
-            except Exception as e:
-                logger.error(f"讀取 JSON 檔案 {json_file} 失敗: {e}")
-        
-        return categories, aliases_map
-    
-    def get_existing_categories(self) -> Dict[str, int]:
-        """取得網站上現有的分類和其 ID
-        
-        Returns:
-            Dict[str, int]: 分類名稱對應的 ID
-        """
-        terms = self.get_all_terms('categories')
-        return {unquote(term['name']): term['id'] for term in terms}
-    
-    def sync_categories(self, json_files: List[str], dry_run: bool = True) -> None:
-        """同步分類
-        
-        Args:
-            json_files: JSON 檔案列表
-            dry_run: 是否為預演模式，預設為 True
-        """
-        # 從 JSON 檔案讀取分類和別名對應
-        json_categories, aliases_map = self.load_json_categories(json_files)
-        
-        # 從 WordPress 獲取現有分類
-        wp_categories = self.get_all_terms('categories')
-        wp_category_names = {unquote(cat.get('name', '')) for cat in wp_categories}
-        
-        # 特殊處理：保留有對應別名的分類
-        preserved_categories = {'8 bit pixel art'}  # 特殊視覺風格，需要保留
-        
-        # 檢查每個現有分類是否有對應的新分類
-        for wp_category in wp_category_names:
-            # 如果這個分類名稱在別名對應表中
-            if wp_category in aliases_map:
-                preserved_categories.add(wp_category)
-        
-        # 找出需要新增和刪除的分類
-        categories_to_add = json_categories - wp_category_names
-        categories_to_delete = wp_category_names - json_categories - preserved_categories
-        
-        # 顯示差異
-        print("\n=== 分類比對結果 ===")
-        print(f"JSON 檔案中的分類數量: {len(json_categories)}")
-        print(f"網站上的分類數量: {len(wp_categories)}")
-        print(f"需要新增的分類數量: {len(categories_to_add)}")
-        print(f"可能需要刪除的分類數量: {len(categories_to_delete)}")
-        
-        if categories_to_add:
-            print("\n需要新增的分類:")
-            for category in sorted(categories_to_add):
-                print(f"- {category}")
-        
-        if categories_to_delete:
-            print("\n可能需要刪除的分類:")
-            for category in sorted(categories_to_delete):
-                for cat in wp_categories:
-                    category_name = unquote(cat.get('name', ''))
-                    category_id = cat.get('id')
-                    if category_name == category:
-                        print(f"- {category} (ID: {category_id})")
-        
-        if not dry_run:
-            # 1. 刪除不需要的分類
-            if categories_to_delete:
-                print("\n=== 開始刪除分類 ===")
-                for category in categories_to_delete:
-                    for cat in wp_categories:
-                        if unquote(cat.get('name', '')) == category:
-                            try:
-                                response = requests.delete(
-                                    f"{self.site_url}/wp-json/wp/v2/categories/{cat['id']}",
-                                    auth=(self.username, self.password)
-                                )
-                                if response.status_code == 200:
-                                    print(f"刪除分類 '{category}' (ID: {cat['id']}) 成功")
-                                else:
-                                    logger.error(f"刪除分類 '{category}' 失敗: {response.text}")
-                            except Exception as e:
-                                logger.error(f"刪除分類 '{category}' 失敗: {e}")
-            
-            # 2. 更新保留的分類
-            if preserved_categories:
-                print("\n=== 開始更新保留的分類 ===")
-                for category in preserved_categories:
-                    # 如果這個分類有對應的新分類
-                    if category in aliases_map:
-                        new_categories = aliases_map[category]
-                        for new_category in new_categories:
-                            print(f"將保留 '{category}' 對應到新分類 '{new_category}'")
-            
-            # 3. 新增缺少的分類
-            if categories_to_add:
-                print("\n=== 開始新增分類 ===")
-                for category in categories_to_add:
-                    try:
-                        term = self.create_term('categories', category)
-                        print(f"創建分類 '{category}' 成功，ID: {term.get('id')}")
-                    except Exception as e:
-                        logger.error(f"創建分類 '{category}' 失敗: {e}")
-    
     def display_terms(self, items: List[Dict], taxonomy: str):
         """顯示分類項目資訊
         
@@ -457,8 +328,8 @@ class WordPressTaxonomyManager:
 def main():
     try:
         parser = argparse.ArgumentParser(description='WordPress 分類管理工具')
-        parser.add_argument('action', choices=['list', 'create', 'update', 'delete', 'sync', 'add_and_update'], 
-                          help='要執行的操作（list、create、update、delete、sync 或 add_and_update）')
+        parser.add_argument('action', choices=['list', 'create', 'update', 'delete', 'add_and_update'], 
+                          help='要執行的操作（list、create、update、delete 或 add_and_update）')
         parser.add_argument('taxonomy', choices=['categories', 'tags'], 
                           help='要管理的分類法（categories 或 tags）')
         parser.add_argument('--name', help='分類或標籤的名稱（create 或 update 時需要）')
@@ -472,17 +343,7 @@ def main():
         
         wp = WordPressTaxonomyManager()
         
-        if args.action == 'sync':
-            if args.taxonomy != 'categories':
-                logger.error('目前只支援同步分類，不支援標籤')
-                sys.exit(1)
-            if not args.json_files:
-                logger.error('同步時必須提供 --json-files 參數')
-                sys.exit(1)
-                
-            wp.sync_categories(args.json_files, args.dry_run)
-            
-        elif args.action == 'add_and_update':
+        if args.action == 'add_and_update':
             if not args.json_files:
                 logger.error('執行 add_and_update 操作時必須提供 --json-files 參數')
                 sys.exit(1)
