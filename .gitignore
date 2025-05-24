@@ -16,8 +16,8 @@ __pycache__/
 *.pyc
 *.pyo
 
-# 動態生成的數據文件
-docs/tags.json
+# 標籤文件
+docs/tags/
 
 # 已封存的數據文件
 scripts/archive/data/
